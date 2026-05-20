@@ -10,16 +10,21 @@ export default async function CotizacionesPage() {
   // Mark expired before fetching
   await supabase.rpc("marcar_cotizaciones_vencidas")
 
-  const { data: cotizaciones } = await supabase
-    .from("v_cotizaciones_resumen")
-    .select("*")
-    .order("numero", { ascending: false })
+  const [{ data: cotizaciones }, { data: configuracion }] = await Promise.all([
+    supabase.from("v_cotizaciones_resumen").select("*").order("numero", { ascending: false }),
+    supabase.from("configuracion").select("razon_social, email, telefono").eq("id", true).single(),
+  ])
 
   return (
     <>
       <Topbar crumbs={["Area N"]} title="Cotizaciones" dolar={dolar} />
       <div className="flex-1 overflow-auto px-6 py-6">
-        <CotizacionesView cotizaciones={cotizaciones ?? []} />
+        <CotizacionesView
+          cotizaciones={cotizaciones ?? []}
+          configuracion={
+            configuracion ?? { razon_social: "Area N", email: null, telefono: null }
+          }
+        />
       </div>
     </>
   )

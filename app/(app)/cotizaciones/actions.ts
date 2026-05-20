@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import type { Database } from "@/types/database"
+import { getResend, getEmailFrom, getBccEmails } from "@/lib/email/resend"
+import { bodyToHtml } from "@/lib/email/cotizacion-template"
+import { renderCotizacionPdfToBuffer } from "@/lib/pdf/render-cotizacion"
+import { formatCotizacionNumero } from "@/lib/format"
 
 type EstadoCotizacion = Database["public"]["Enums"]["estado_cotizacion"]
 type Result<T = void> = { ok: true; data: T } | { ok: false; error: string }
@@ -39,6 +43,96 @@ export type PdfPayload = {
     banco: string | null
     cbu_alias: string | null
   }
+}
+
+export type SendEmailInput = {
+  cotizacionId: string
+  to: string
+  subject: string
+  body: string
+  logoUrl: string
+}
+
+export async function sendCotizacionByEmail(input: SendEmailInput): Promise<Result<{ id: string }>> {
+  const resend = getResend()
+  if (!resend) {
+    return { ok: false, error: "Falta configurar RESEND_API_KEY en las variables de entorno" }
+  }
+  if (!input.to.trim()) return { ok: false, error: "Falta el mail del destinatario" }
+
+  const supabase = await createClient()
+  const payloadRes = await getPdfPayload(input.cotizacionId)
+  if (!payloadRes.ok) return { ok: false, error: payloadRes.error }
+  const p = payloadRes.data
+
+  const subtotalProductos = p.items
+    .filter((i) => i.tipo === "producto")
+    .reduce((s, i) => s + i.cantidad * i.precio_unitario_ars, 0)
+  const subtotalManoObra = p.items
+    .filter((i) => i.tipo === "mano_obra")
+    .reduce((s, i) => s + i.cantidad * i.precio_unitario_ars, 0)
+  const total = subtotalProductos + subtotalManoObra
+  const totalUsd = total / (p.cotizacion_dolar || 1)
+  const numeroStr = formatCotizacionNumero(p.numero)
+
+  let pdfBuffer: Buffer
+  try {
+    pdfBuffer = await renderCotizacionPdfToBuffer({
+      numeroFormateado: numeroStr,
+      fechaEmision: p.fecha_emision,
+      validezDias: p.validez_dias,
+      cotizacionDolar: p.cotizacion_dolar,
+      cliente: p.cliente,
+      items: p.items,
+      subtotalProductos,
+      subtotalManoObra,
+      total,
+      totalUsd,
+      configuracion: p.configuracion,
+      logoUrl: input.logoUrl,
+    })
+  } catch (e) {
+    return { ok: false, error: `No se pudo generar el PDF: ${e instanceof Error ? e.message : String(e)}` }
+  }
+
+  const bcc = getBccEmails().filter((b) => b !== input.to.toLowerCase().trim())
+
+  try {
+    const { error: sendErr } = await resend.emails.send({
+      from: getEmailFrom(),
+      to: [input.to.trim()],
+      bcc: bcc.length > 0 ? bcc : undefined,
+      subject: input.subject,
+      text: input.body,
+      html: bodyToHtml(input.body, p.configuracion.razon_social),
+      attachments: [
+        {
+          filename: `${numeroStr}.pdf`,
+          content: pdfBuffer,
+        },
+      ],
+    })
+    if (sendErr) {
+      return { ok: false, error: `Resend rechazó el envío: ${sendErr.message}` }
+    }
+  } catch (e) {
+    return { ok: false, error: `Error al enviar: ${e instanceof Error ? e.message : String(e)}` }
+  }
+
+  // Marcar como enviada en DB
+  await supabase
+    .from("cotizaciones")
+    .update({
+      estado: "enviada",
+      enviada_at: new Date().toISOString(),
+      enviada_a: input.to.trim(),
+    })
+    .eq("id", input.cotizacionId)
+
+  revalidatePath("/cotizaciones")
+  revalidatePath(`/editor/${input.cotizacionId}`)
+  revalidatePath("/dashboard")
+  return { ok: true, data: { id: input.cotizacionId } }
 }
 
 export async function getPdfPayload(id: string): Promise<Result<PdfPayload>> {

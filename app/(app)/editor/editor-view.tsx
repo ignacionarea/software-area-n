@@ -4,9 +4,10 @@ import { useMemo, useRef, useState, useTransition, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
-  Search, Plus, Minus, X, Save, Send, Download, Package, FilePenLine, Check,
+  Search, Plus, Minus, X, Save, Send, Download, Package, FilePenLine, Check, Mail,
 } from "lucide-react"
 import { downloadCotizacionPdf } from "@/components/pdf/download"
+import { SendCotizacionDialog } from "@/components/email/send-cotizacion-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -73,6 +74,7 @@ export function EditorView({
     open: false,
     nombre: "",
   })
+  const [showSendDialog, setShowSendDialog] = useState(false)
 
   // Persist panel sizes in localStorage (client-only)
   const [layoutStorage, setLayoutStorage] = useState<Storage | undefined>(undefined)
@@ -417,6 +419,24 @@ export function EditorView({
         <Button variant="outline" size="sm" onClick={handleDownloadPdf}>
           <Download size={13} className="mr-1.5" />
           Descargar PDF
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            if (!cotizacion) {
+              toast.error("Guardá la cotización primero antes de enviarla")
+              return
+            }
+            if (!clienteSeleccionado?.email) {
+              toast.error("El cliente no tiene email cargado")
+              return
+            }
+            setShowSendDialog(true)
+          }}
+        >
+          <Mail size={13} className="mr-1.5" />
+          Enviar por mail
         </Button>
         <Button variant="outline" size="sm" onClick={handleSave} disabled={pending}>
           <Save size={13} className="mr-1.5" />
@@ -790,6 +810,25 @@ export function EditorView({
           setShowNewClienteDialog({ open: false, nombre: "" })
         }}
       />
+
+      {cotizacion && clienteSeleccionado && (
+        <SendCotizacionDialog
+          open={showSendDialog}
+          onOpenChange={setShowSendDialog}
+          cotizacionId={cotizacion.id}
+          defaultTo={clienteSeleccionado.email ?? ""}
+          clienteNombre={clienteSeleccionado.nombre}
+          numeroFormateado={numeroDisplay}
+          fechaEmision={fecha}
+          validezDias={validezDias}
+          totalArs={totals.total}
+          totalUsd={totals.totalUsd}
+          razonSocial={configuracion.razon_social}
+          contactoEmail={configuracion.email}
+          contactoTel={configuracion.telefono}
+          onSent={() => router.refresh()}
+        />
+      )}
     </>
   )
 }

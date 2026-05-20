@@ -5,9 +5,10 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
-  Search, ArrowUp, ArrowDown, MoreHorizontal, Pencil, Copy, Trash2, FilePlus, ChevronDown, Download,
+  Search, ArrowUp, ArrowDown, MoreHorizontal, Pencil, Copy, Trash2, FilePlus, ChevronDown, Download, Mail,
 } from "lucide-react"
 import { downloadCotizacionPdf } from "@/components/pdf/download"
+import { SendCotizacionDialog } from "@/components/email/send-cotizacion-dialog"
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
@@ -31,11 +32,20 @@ const ESTADOS: { value: Estado; label: string }[] = [
 type SortKey = "numero" | "cliente" | "fecha" | "total" | "estado"
 type SortDir = "asc" | "desc"
 
-export function CotizacionesView({ cotizaciones }: { cotizaciones: Resumen[] }) {
+type Configuracion = { razon_social: string; email: string | null; telefono: string | null }
+
+export function CotizacionesView({
+  cotizaciones,
+  configuracion,
+}: {
+  cotizaciones: Resumen[]
+  configuracion: Configuracion
+}) {
   const router = useRouter()
   const [q, setQ] = useState("")
   const [filter, setFilter] = useState<"todas" | Estado>("todas")
   const [sort, setSort] = useState<{ k: SortKey; dir: SortDir }>({ k: "numero", dir: "desc" })
+  const [sendingFor, setSendingFor] = useState<Resumen | null>(null)
 
   const counts = useMemo(() => {
     const base = { todas: cotizaciones.length } as Record<"todas" | Estado, number>
@@ -158,11 +168,38 @@ export function CotizacionesView({ cotizaciones }: { cotizaciones: Resumen[] }) 
             </thead>
             <tbody>
               {filtered.map((c) => (
-                <Row key={c.id ?? Math.random()} c={c} onRefresh={() => router.refresh()} />
+                <Row
+                  key={c.id ?? Math.random()}
+                  c={c}
+                  onRefresh={() => router.refresh()}
+                  onSendEmail={() => setSendingFor(c)}
+                />
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {sendingFor && (
+        <SendCotizacionDialog
+          open={!!sendingFor}
+          onOpenChange={(o) => !o && setSendingFor(null)}
+          cotizacionId={sendingFor.id!}
+          defaultTo={sendingFor.cliente_email ?? ""}
+          clienteNombre={sendingFor.cliente_nombre ?? "Cliente"}
+          numeroFormateado={formatCotizacionNumero(sendingFor.numero ?? 0)}
+          fechaEmision={sendingFor.fecha_emision ?? new Date().toISOString().slice(0, 10)}
+          validezDias={sendingFor.validez_dias ?? 7}
+          totalArs={sendingFor.total_ars ?? 0}
+          totalUsd={sendingFor.total_usd ?? 0}
+          razonSocial={configuracion.razon_social}
+          contactoEmail={configuracion.email}
+          contactoTel={configuracion.telefono}
+          onSent={() => {
+            setSendingFor(null)
+            router.refresh()
+          }}
+        />
       )}
     </>
   )
@@ -211,7 +248,7 @@ function Th({
   )
 }
 
-function Row({ c, onRefresh }: { c: Resumen; onRefresh: () => void }) {
+function Row({ c, onRefresh, onSendEmail }: { c: Resumen; onRefresh: () => void; onSendEmail: () => void }) {
   const [pending, start] = useTransition()
   const router = useRouter()
 
@@ -354,6 +391,20 @@ function Row({ c, onRefresh }: { c: Resumen; onRefresh: () => void }) {
             <DropdownMenuItem onClick={onDownloadPdf}>
               <Download size={13} className="mr-2" />
               Descargar PDF
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                if (!c.cliente_email) {
+                  toast.error("El cliente no tiene email cargado", {
+                    description: "Editá el cliente desde /clientes y agregale un email.",
+                  })
+                  return
+                }
+                onSendEmail()
+              }}
+            >
+              <Mail size={13} className="mr-2" />
+              Enviar por mail
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onDuplicate}>
               <Copy size={13} className="mr-2" />

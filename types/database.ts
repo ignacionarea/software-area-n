@@ -104,6 +104,8 @@ export type Database = {
           cliente_id: string | null
           cotizacion_dolar: number
           created_at: string
+          enviada_a: string | null
+          enviada_at: string | null
           estado: Database["public"]["Enums"]["estado_cotizacion"]
           fecha_emision: string
           id: string
@@ -116,6 +118,8 @@ export type Database = {
           cliente_id?: string | null
           cotizacion_dolar: number
           created_at?: string
+          enviada_a?: string | null
+          enviada_at?: string | null
           estado?: Database["public"]["Enums"]["estado_cotizacion"]
           fecha_emision?: string
           id?: string
@@ -128,6 +132,8 @@ export type Database = {
           cliente_id?: string | null
           cotizacion_dolar?: number
           created_at?: string
+          enviada_a?: string | null
+          enviada_at?: string | null
           estado?: Database["public"]["Enums"]["estado_cotizacion"]
           fecha_emision?: string
           id?: string
