@@ -1,6 +1,6 @@
 "use client"
 
-import { useTransition, useState } from "react"
+import { useEffect, useTransition, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Check, Save, Plus, Pencil, Trash2, Play, RefreshCw } from "lucide-react"
@@ -453,17 +453,15 @@ function SourceDialog({
   const [activo, setActivo] = useState(true)
   const [maxPages, setMaxPages] = useState(100)
 
-  function reset(s: ScrapeSource | null) {
-    setNombre(s?.nombre ?? "")
-    setSlug(s?.slug ?? "")
-    setUrlBase(s?.url_base ?? "")
-    setPlatform((s?.platform as "tiendanube" | "woocommerce") ?? "tiendanube")
-    setActivo(s?.activo ?? true)
-    setMaxPages(s?.max_pages ?? 100)
-  }
-
-  if (open && nombre === "" && !editing) reset(null)
-  if (open && editing && slug !== editing.slug) reset(editing)
+  useEffect(() => {
+    if (!open) return
+    setNombre(editing?.nombre ?? "")
+    setSlug(editing?.slug ?? "")
+    setUrlBase(editing?.url_base ?? "")
+    setPlatform((editing?.platform as "tiendanube" | "woocommerce") ?? "tiendanube")
+    setActivo(editing?.activo ?? true)
+    setMaxPages(editing?.max_pages ?? 100)
+  }, [open, editing])
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault()
