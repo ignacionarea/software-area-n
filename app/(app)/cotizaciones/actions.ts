@@ -29,7 +29,7 @@ export type PdfPayload = {
     cantidad: number
     precio_unitario_ars: number
     url_producto: string | null
-    marca: "sonoff" | "demasled" | null
+    marca: string | null
   }>
   configuracion: {
     razon_social: string
@@ -179,7 +179,7 @@ export async function getPdfPayload(id: string): Promise<Result<PdfPayload>> {
         cantidad: Number(i.cantidad),
         precio_unitario_ars: Number(i.precio_unitario_ars),
         url_producto: i.url_producto,
-        marca: (i.productos as { marca: "sonoff" | "demasled" } | null)?.marca ?? null,
+        marca: (i.productos as { marca: string } | null)?.marca ?? null,
       })),
       configuracion: {
         razon_social: conf.razon_social,

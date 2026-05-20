@@ -3,7 +3,7 @@ export type ScrapedProduct = {
   nombre: string
   descripcion: string | null
   categoria: string | null
-  marca: "sonoff" | "demasled"
+  marca: string
   precio_ars: number
   url: string
   imagen_url: string | null
@@ -11,7 +11,7 @@ export type ScrapedProduct = {
 }
 
 export type ScrapeResult = {
-  marca: "sonoff" | "demasled"
+  marca: string
   ok: boolean
   scraped: number
   inserted: number

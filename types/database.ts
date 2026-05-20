@@ -285,45 +285,96 @@ export type Database = {
           categoria: string | null
           created_at: string
           descripcion: string | null
+          es_manual: boolean
           id: string
           imagen_url: string | null
-          marca: Database["public"]["Enums"]["marca_proveedor"]
+          marca: string
           moneda_origen: Database["public"]["Enums"]["moneda"]
           nombre: string
           precio_origen: number
           sku: string | null
           updated_at: string
-          url: string
+          url: string | null
         }
         Insert: {
           activo?: boolean
           categoria?: string | null
           created_at?: string
           descripcion?: string | null
+          es_manual?: boolean
           id?: string
           imagen_url?: string | null
-          marca: Database["public"]["Enums"]["marca_proveedor"]
+          marca: string
           moneda_origen?: Database["public"]["Enums"]["moneda"]
           nombre: string
           precio_origen: number
           sku?: string | null
           updated_at?: string
-          url: string
+          url?: string | null
         }
         Update: {
           activo?: boolean
           categoria?: string | null
           created_at?: string
           descripcion?: string | null
+          es_manual?: boolean
           id?: string
           imagen_url?: string | null
-          marca?: Database["public"]["Enums"]["marca_proveedor"]
+          marca?: string
           moneda_origen?: Database["public"]["Enums"]["moneda"]
           nombre?: string
           precio_origen?: number
           sku?: string | null
           updated_at?: string
-          url?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
+      scrape_sources: {
+        Row: {
+          activo: boolean
+          created_at: string
+          id: string
+          last_run_at: string | null
+          last_run_count: number | null
+          last_run_error: string | null
+          last_run_ok: boolean | null
+          max_pages: number
+          nombre: string
+          platform: string
+          slug: string
+          updated_at: string
+          url_base: string
+        }
+        Insert: {
+          activo?: boolean
+          created_at?: string
+          id?: string
+          last_run_at?: string | null
+          last_run_count?: number | null
+          last_run_error?: string | null
+          last_run_ok?: boolean | null
+          max_pages?: number
+          nombre: string
+          platform?: string
+          slug: string
+          updated_at?: string
+          url_base: string
+        }
+        Update: {
+          activo?: boolean
+          created_at?: string
+          id?: string
+          last_run_at?: string | null
+          last_run_count?: number | null
+          last_run_error?: string | null
+          last_run_ok?: boolean | null
+          max_pages?: number
+          nombre?: string
+          platform?: string
+          slug?: string
+          updated_at?: string
+          url_base?: string
         }
         Relationships: []
       }
@@ -390,7 +441,6 @@ export type Database = {
         | "aceptada"
         | "rechazada"
         | "vencida"
-      marca_proveedor: "sonoff" | "demasled"
       moneda: "ARS" | "USD"
       ppd_estado: "borrador" | "descartado" | "convertido"
       tipo_item: "producto" | "mano_obra"

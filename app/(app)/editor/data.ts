@@ -31,10 +31,11 @@ async function fetchAllActiveProducts(
 export async function loadEditorContext(cotizacionId?: string) {
   const supabase = await createClient()
 
-  const [clientesRes, productos, configRes, cotRes, itemsRes] = await Promise.all([
+  const [clientesRes, productos, configRes, sourcesRes, cotRes, itemsRes] = await Promise.all([
     supabase.from("clientes").select("*").order("nombre"),
     fetchAllActiveProducts(supabase),
     supabase.from("configuracion").select("*").eq("id", true).single(),
+    supabase.from("scrape_sources").select("*").order("nombre"),
     cotizacionId
       ? supabase.from("cotizaciones").select("*").eq("id", cotizacionId).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -50,6 +51,7 @@ export async function loadEditorContext(cotizacionId?: string) {
   return {
     clientes: clientesRes.data ?? [],
     productos,
+    sources: sourcesRes.data ?? [],
     configuracion: configRes.data,
     cotizacion: cotRes.data,
     items: itemsRes.data ?? [],

@@ -1,28 +1,40 @@
 "use client"
 
 import { useTransition, useState } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Check, Save } from "lucide-react"
+import { Check, Save, Plus, Pencil, Trash2, Play, RefreshCw } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { saveFiscal, savePdfLegal } from "./actions"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog"
+import { cn } from "@/lib/utils"
+import {
+  saveFiscal, savePdfLegal, saveScrapeSource, deleteScrapeSource,
+  toggleScrapeSourceActivo, runScrapeSource, type ScrapeSourceInput,
+} from "./actions"
 import type { Database } from "@/types/database"
 
 type Config = Database["public"]["Tables"]["configuracion"]["Row"]
+type ScrapeSource = Database["public"]["Tables"]["scrape_sources"]["Row"]
 
 export function ConfigForms({
   config,
   ultimaCotizacion,
   proximoNumero,
   userEmail,
+  sources,
 }: {
   config: Config
   ultimaCotizacion: { numero: number; cliente: string | null; fecha: string | null } | null
   proximoNumero: number
   userEmail: string
+  sources: ScrapeSource[]
 }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 items-start">
@@ -45,7 +57,7 @@ export function ConfigForms({
           </TabsContent>
 
           <TabsContent value="scraping" className="mt-4">
-            <ScrapingPanel />
+            <ScrapingPanel sources={sources} />
           </TabsContent>
 
           <TabsContent value="numeracion" className="mt-4">
@@ -266,40 +278,291 @@ function Field({
   )
 }
 
-function ScrapingPanel() {
+function ScrapingPanel({ sources }: { sources: ScrapeSource[] }) {
+  const router = useRouter()
+  const [dialog, setDialog] = useState<{ open: boolean; editing: ScrapeSource | null }>({ open: false, editing: null })
+  const [pending, start] = useTransition()
+  const [runningSlug, setRunningSlug] = useState<string | null>(null)
+
+  function onToggle(s: ScrapeSource) {
+    start(async () => {
+      const r = await toggleScrapeSourceActivo(s.id, !s.activo)
+      if (!r.ok) toast.error("No se pudo cambiar el estado", { description: r.error })
+      else router.refresh()
+    })
+  }
+
+  function onDelete(s: ScrapeSource) {
+    if (!confirm(`¿Eliminar la fuente "${s.nombre}"? Si tiene productos sincronizados, no se va a poder eliminar.`)) return
+    start(async () => {
+      const r = await deleteScrapeSource(s.id)
+      if (!r.ok) toast.error("No se pudo eliminar", { description: r.error })
+      else {
+        toast.success("Fuente eliminada")
+        router.refresh()
+      }
+    })
+  }
+
+  async function onRun(s: ScrapeSource) {
+    if (!s.activo) {
+      toast.error("Activá la fuente primero")
+      return
+    }
+    setRunningSlug(s.slug)
+    toast.loading(`Scrapeando ${s.nombre}…`, { id: `run-${s.slug}`, description: "Puede tardar entre 30 segundos y 2 minutos." })
+    const r = await runScrapeSource(s.slug)
+    setRunningSlug(null)
+    if (!r.ok) {
+      toast.error(`Falló el scrape de ${s.nombre}`, { id: `run-${s.slug}`, description: r.error })
+      return
+    }
+    toast.success(`${s.nombre} actualizada`, {
+      id: `run-${s.slug}`,
+      description: `${r.data.scraped} productos · ${r.data.inserted} nuevos · ${r.data.updated} actualizados`,
+    })
+    router.refresh()
+  }
+
   return (
-    <div className="border border-border rounded-lg bg-card">
-      <div className="px-4 py-3 border-b border-border">
-        <div className="text-sm font-medium">Fuentes de productos</div>
-        <div className="text-xs text-muted-foreground mt-0.5">Próximamente: scrape diario + botón de actualizar manual</div>
+    <div className="flex flex-col gap-3">
+      <div className="border border-border rounded-lg bg-card">
+        <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border">
+          <span className="text-sm font-medium">Fuentes de scraping</span>
+          <span className="text-xs text-muted-foreground">{sources.length} configurada(s)</span>
+          <div className="flex-1" />
+          <Button size="sm" onClick={() => setDialog({ open: true, editing: null })}>
+            <Plus size={13} className="mr-1.5" />
+            Agregar fuente
+          </Button>
+        </div>
+        {sources.length === 0 ? (
+          <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+            No hay fuentes configuradas. Agregá una tienda Tienda Nube o WooCommerce para empezar a sincronizar productos.
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            {sources.map((s) => (
+              <SourceRow
+                key={s.id}
+                source={s}
+                running={runningSlug === s.slug || pending}
+                onEdit={() => setDialog({ open: true, editing: s })}
+                onDelete={() => onDelete(s)}
+                onToggle={() => onToggle(s)}
+                onRun={() => onRun(s)}
+              />
+            ))}
+          </div>
+        )}
       </div>
-      <div className="p-4 flex flex-col gap-3">
-        <SourceRow name="Sonoff Argentina" url="https://sonoffargentina.com/productos" disabled />
-        <SourceRow name="Demasled" url="https://demasled.com.ar/" disabled />
-        <SourceRow name="Dólar oficial venta" url="dolarapi.com/v1/dolares/oficial" status="ok" />
-      </div>
+
+      <p className="text-xs text-muted-foreground px-1">
+        El cron automático corre todos los días a las 10:00 ART (en Vercel). Las fuentes <strong>desactivadas</strong> se saltean.
+        El botón <em>Ejecutar</em> dispara un scrape inmediato de esa fuente.
+      </p>
+
+      <SourceDialog
+        open={dialog.open}
+        editing={dialog.editing}
+        onClose={() => setDialog({ open: false, editing: null })}
+        onSaved={() => {
+          setDialog({ open: false, editing: null })
+          router.refresh()
+        }}
+      />
     </div>
   )
 }
 
-function SourceRow({ name, url, disabled, status }: { name: string; url: string; disabled?: boolean; status?: "ok" }) {
+function SourceRow({
+  source,
+  running,
+  onEdit,
+  onDelete,
+  onToggle,
+  onRun,
+}: {
+  source: ScrapeSource
+  running: boolean
+  onEdit: () => void
+  onDelete: () => void
+  onToggle: () => void
+  onRun: () => void
+}) {
+  const lastRunText = (() => {
+    if (!source.last_run_at) return "Nunca ejecutado"
+    const d = new Date(source.last_run_at)
+    const diff = Date.now() - d.getTime()
+    const hr = Math.floor(diff / 3600000)
+    const stem =
+      hr < 1 ? "hace pocos minutos" : hr < 24 ? `hace ${hr} h` : `hace ${Math.floor(hr / 24)} d`
+    if (source.last_run_ok === false) return `Error ${stem}: ${source.last_run_error ?? "?"}`
+    return `${stem} · ${source.last_run_count ?? 0} productos`
+  })()
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 border border-border rounded-md bg-secondary/30">
-      <span
-        className={
-          "w-2 h-2 rounded-full " +
-          (disabled
-            ? "bg-muted-foreground"
-            : status === "ok"
-              ? "bg-primary shadow-[0_0_0_4px_color-mix(in_oklch,var(--primary)_15%,transparent)]"
-              : "bg-[color:var(--arean-warn)]")
-        }
-      />
+    <div className={cn("flex items-center gap-3 px-4 py-3 border-t border-border first:border-t-0", !source.activo && "opacity-60")}>
+      <Checkbox checked={source.activo} onCheckedChange={onToggle} disabled={running} />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium">{name}</div>
-        <div className="font-mono text-[10px] text-muted-foreground truncate">{url}</div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">{source.nombre}</span>
+          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            {source.platform}
+          </span>
+          <span className="font-mono text-[10px] text-muted-foreground">· {source.slug}</span>
+        </div>
+        <div className="font-mono text-[10px] text-muted-foreground truncate">{source.url_base}</div>
+        <div
+          className={cn(
+            "font-mono text-[10px] mt-0.5",
+            source.last_run_ok === false ? "text-destructive" : "text-muted-foreground"
+          )}
+        >
+          {lastRunText}
+        </div>
       </div>
-      <span className="font-mono text-[11px] text-muted-foreground">{disabled ? "pendiente" : "activo"}</span>
+      <Button variant="outline" size="sm" onClick={onRun} disabled={running || !source.activo} title="Ejecutar ahora">
+        {running ? <RefreshCw size={13} className="animate-spin" /> : <Play size={13} />}
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onEdit} disabled={running} title="Editar">
+        <Pencil size={13} />
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onDelete} disabled={running} title="Eliminar">
+        <Trash2 size={13} />
+      </Button>
+    </div>
+  )
+}
+
+function SourceDialog({
+  open,
+  editing,
+  onClose,
+  onSaved,
+}: {
+  open: boolean
+  editing: ScrapeSource | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [pending, start] = useTransition()
+  const [nombre, setNombre] = useState("")
+  const [slug, setSlug] = useState("")
+  const [urlBase, setUrlBase] = useState("")
+  const [platform, setPlatform] = useState<"tiendanube" | "woocommerce">("tiendanube")
+  const [activo, setActivo] = useState(true)
+  const [maxPages, setMaxPages] = useState(100)
+
+  function reset(s: ScrapeSource | null) {
+    setNombre(s?.nombre ?? "")
+    setSlug(s?.slug ?? "")
+    setUrlBase(s?.url_base ?? "")
+    setPlatform((s?.platform as "tiendanube" | "woocommerce") ?? "tiendanube")
+    setActivo(s?.activo ?? true)
+    setMaxPages(s?.max_pages ?? 100)
+  }
+
+  if (open && nombre === "" && !editing) reset(null)
+  if (open && editing && slug !== editing.slug) reset(editing)
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const input: ScrapeSourceInput = {
+      id: editing?.id,
+      slug,
+      nombre,
+      url_base: urlBase,
+      platform,
+      activo,
+      max_pages: maxPages,
+    }
+    start(async () => {
+      const r = await saveScrapeSource(input)
+      if (!r.ok) {
+        toast.error(r.error)
+        return
+      }
+      toast.success(editing ? "Fuente actualizada" : "Fuente creada")
+      onSaved()
+    })
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && !pending && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{editing ? "Editar fuente" : "Agregar fuente de scraping"}</DialogTitle>
+          <DialogDescription>
+            Por ahora soporta tiendas de <strong>Tienda Nube</strong> (la mayoría de tiendas argentinas)
+            y <strong>WooCommerce</strong> (como Sonoff). La página tiene que tener una ruta <code>/productos</code> que liste el catálogo.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+          <FieldRow label="Nombre">
+            <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej: Demasled" required autoFocus />
+          </FieldRow>
+          <FieldRow label="URL base (sin / al final)">
+            <Input
+              value={urlBase}
+              onChange={(e) => setUrlBase(e.target.value)}
+              placeholder="https://demasled.com.ar"
+              className="font-mono"
+              required
+            />
+          </FieldRow>
+          <div className="grid grid-cols-[1fr_140px_120px] gap-3">
+            <FieldRow label="Slug (auto si vacío)">
+              <Input
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="demasled"
+                className="font-mono"
+              />
+            </FieldRow>
+            <FieldRow label="Plataforma">
+              <select
+                value={platform}
+                onChange={(e) => setPlatform(e.target.value as "tiendanube" | "woocommerce")}
+                className="h-10 px-3 rounded-md border border-input bg-transparent text-sm"
+              >
+                <option value="tiendanube">Tienda Nube</option>
+                <option value="woocommerce">WooCommerce</option>
+              </select>
+            </FieldRow>
+            <FieldRow label="Páginas máx.">
+              <Input
+                type="number"
+                min={1}
+                max={500}
+                value={maxPages}
+                onChange={(e) => setMaxPages(Number(e.target.value) || 100)}
+                className="font-mono"
+              />
+            </FieldRow>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={activo} onCheckedChange={(v) => setActivo(v === true)} />
+            <span>Activa (se ejecuta en el cron diario)</span>
+          </label>
+
+          <DialogFooter className="mt-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={pending}>Cancelar</Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Guardando…" : editing ? "Guardar cambios" : "Crear fuente"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{label}</Label>
+      {children}
     </div>
   )
 }

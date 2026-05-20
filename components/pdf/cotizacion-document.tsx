@@ -296,7 +296,7 @@ export function CotizacionPdf({
                 )}
                 {it.url_producto && (
                   <Link src={it.url_producto} style={styles.rowSubLink}>
-                    {it.marca ? `ver en ${it.marca === "sonoff" ? "Sonoff AR" : "Demasled"}` : "ver producto"}
+                    {it.marca && it.marca !== "manual" ? `ver en ${it.marca}` : "ver producto"}
                   </Link>
                 )}
               </View>

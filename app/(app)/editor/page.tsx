@@ -17,6 +17,7 @@ export default async function NewCotizacionPage() {
       <EditorView
         clientes={ctx.clientes}
         productos={ctx.productos}
+        sources={ctx.sources}
         configuracion={ctx.configuracion}
         cotizacion={null}
         items={[]}

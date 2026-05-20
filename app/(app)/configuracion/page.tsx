@@ -7,7 +7,7 @@ export default async function ConfiguracionPage() {
   const supabase = await createClient()
   const dolar = await getDolarVentaSafe()
 
-  const [{ data: config }, { data: user }, { data: lastCot }] = await Promise.all([
+  const [{ data: config }, { data: user }, { data: lastCot }, { data: sources }] = await Promise.all([
     supabase.from("configuracion").select("*").eq("id", true).single(),
     supabase.auth.getUser(),
     supabase
@@ -16,6 +16,7 @@ export default async function ConfiguracionPage() {
       .order("numero", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase.from("scrape_sources").select("*").order("nombre"),
   ])
 
   const proximoNumero = lastCot?.numero != null ? lastCot.numero + 1 : 88
@@ -37,6 +38,7 @@ export default async function ConfiguracionPage() {
           ultimaCotizacion={ultimaCotizacion}
           proximoNumero={proximoNumero}
           userEmail={user.user?.email ?? ""}
+          sources={sources ?? []}
         />
       </div>
     </>

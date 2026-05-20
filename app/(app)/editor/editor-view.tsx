@@ -28,7 +28,13 @@ type Producto = Database["public"]["Tables"]["productos"]["Row"]
 type Configuracion = Database["public"]["Tables"]["configuracion"]["Row"]
 type Cotizacion = Database["public"]["Tables"]["cotizaciones"]["Row"]
 type ItemRow = Database["public"]["Tables"]["items_cotizacion"]["Row"]
+type Source = Database["public"]["Tables"]["scrape_sources"]["Row"]
 type EstadoCotizacion = Database["public"]["Enums"]["estado_cotizacion"]
+
+function marcaLabel(marca: string, sources: Source[]): string {
+  if (marca === "manual") return "Manual"
+  return sources.find((s) => s.slug === marca)?.nombre ?? marca
+}
 
 type ProductoItem = {
   uid: string
@@ -55,6 +61,7 @@ function uid() {
 export function EditorView({
   clientes: clientesInitial,
   productos,
+  sources,
   configuracion,
   cotizacion,
   items: existingItems,
@@ -62,6 +69,7 @@ export function EditorView({
 }: {
   clientes: Cliente[]
   productos: Producto[]
+  sources: Source[]
   configuracion: Configuracion
   cotizacion: Cotizacion | null
   items: ItemRow[]
@@ -466,6 +474,7 @@ export function EditorView({
         >
           <CatalogoPane
             productos={productos}
+            sources={sources}
             productosEnCotizacion={new Set(productoItems.map((i) => i.producto_id))}
             onAdd={addProducto}
           />
@@ -1014,15 +1023,26 @@ function EstadoChip({ estado }: { estado: EstadoCotizacion }) {
 
 function CatalogoPane({
   productos,
+  sources,
   productosEnCotizacion,
   onAdd,
 }: {
   productos: Producto[]
+  sources: Source[]
   productosEnCotizacion: Set<string>
   onAdd: (p: Producto) => void
 }) {
   const [q, setQ] = useState("")
-  const [marca, setMarca] = useState<"todos" | "sonoff" | "demasled">("todos")
+  const [marca, setMarca] = useState<string>("todos")
+
+  // List of available marca filters: each source slug + "manual" if any manual exists
+  const marcasDisponibles = useMemo(() => {
+    const result = sources.map((s) => ({ slug: s.slug, label: s.nombre }))
+    if (productos.some((p) => p.marca === "manual")) {
+      result.push({ slug: "manual", label: "Manual" })
+    }
+    return result
+  }, [sources, productos])
 
   const filtered = useMemo(() => {
     let list = productos
@@ -1059,8 +1079,9 @@ function CatalogoPane({
         </div>
         <div className="flex gap-1 flex-wrap">
           <CatChip active={marca === "todos"} onClick={() => setMarca("todos")} label="Todos" />
-          <CatChip active={marca === "sonoff"} onClick={() => setMarca("sonoff")} label="Sonoff" />
-          <CatChip active={marca === "demasled"} onClick={() => setMarca("demasled")} label="Demasled" />
+          {marcasDisponibles.map((m) => (
+            <CatChip key={m.slug} active={marca === m.slug} onClick={() => setMarca(m.slug)} label={m.label} />
+          ))}
         </div>
       </div>
 
@@ -1074,6 +1095,7 @@ function CatalogoPane({
             <CatalogCard
               key={p.id}
               producto={p}
+              sources={sources}
               inCart={productosEnCotizacion.has(p.id)}
               onClick={() => onAdd(p)}
             />
@@ -1111,10 +1133,12 @@ function CatChip({
 
 function CatalogCard({
   producto,
+  sources,
   inCart,
   onClick,
 }: {
   producto: Producto
+  sources: Source[]
   inCart: boolean
   onClick: () => void
 }) {
@@ -1134,7 +1158,7 @@ function CatalogCard({
         {inCart && <Check size={12} className="text-primary shrink-0 mt-0.5" />}
       </div>
       <div className="font-mono text-[10px] text-muted-foreground mb-1 truncate">
-        {producto.sku ?? "—"} · {producto.marca === "sonoff" ? "Sonoff AR" : "Demasled"}
+        {producto.sku ?? "—"} · {marcaLabel(producto.marca, sources)}
       </div>
       <div className="font-mono text-xs">{formatARS(Number(producto.precio_origen))}</div>
     </button>

@@ -27,6 +27,7 @@ export default async function EditCotizacionPage({
       <EditorView
         clientes={ctx.clientes}
         productos={ctx.productos}
+        sources={ctx.sources}
         configuracion={ctx.configuracion}
         cotizacion={ctx.cotizacion}
         items={ctx.items}

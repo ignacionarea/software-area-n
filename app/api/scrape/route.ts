@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  let body: { sources?: ("sonoff" | "demasled")[]; demasledMaxPages?: number } = {}
+  let body: { slugs?: string[]; maxPages?: number } = {}
   try {
     body = await request.json()
   } catch {
@@ -34,8 +34,8 @@ export async function POST(request: NextRequest) {
   }
 
   const results = await runScrapers({
-    sources: body.sources,
-    demasledMaxPages: body.demasledMaxPages,
+    slugs: body.slugs,
+    maxPages: body.maxPages,
     asAdmin: fromCron,
   })
 

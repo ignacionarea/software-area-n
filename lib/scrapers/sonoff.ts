@@ -46,7 +46,8 @@ async function inBatches<T>(
   }
 }
 
-export async function scrapeSonoff(): Promise<ScrapedProduct[]> {
+export async function scrapeSonoff(opts?: { marca?: string }): Promise<ScrapedProduct[]> {
+  const marca = opts?.marca ?? "sonoff"
   const res = await fetch(URL_LISTING, {
     headers: { "User-Agent": USER_AGENT, "Accept-Language": "es-AR" },
   })
@@ -85,7 +86,7 @@ export async function scrapeSonoff(): Promise<ScrapedProduct[]> {
       nombre: modelCode,
       descripcion: null,
       categoria,
-      marca: "sonoff",
+      marca,
       precio_ars,
       url,
       imagen_url,

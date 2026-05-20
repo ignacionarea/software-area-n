@@ -33,7 +33,10 @@ export default async function ProductosPage() {
   const supabase = await createClient()
   const dolar = await getDolarVentaSafe()
 
-  const productos = await fetchAllProductos(supabase)
+  const [productos, sourcesRes] = await Promise.all([
+    fetchAllProductos(supabase),
+    supabase.from("scrape_sources").select("*").order("nombre"),
+  ])
   const lastUpdate = productos[0]?.updated_at ?? null
 
   return (
@@ -42,6 +45,7 @@ export default async function ProductosPage() {
       <div className="flex-1 overflow-auto px-6 py-6">
         <ProductosView
           productos={productos}
+          sources={sourcesRes.data ?? []}
           lastUpdate={lastUpdate}
           dolarVenta={dolar.venta}
         />
