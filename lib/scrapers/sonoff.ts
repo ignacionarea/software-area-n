@@ -91,6 +91,7 @@ export async function scrapeSonoff(opts?: { marca?: string }): Promise<ScrapedPr
       url,
       imagen_url,
       activo,
+      variantes: [], // WooCommerce variable products: future work
     })
   })
 

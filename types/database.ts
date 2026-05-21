@@ -295,6 +295,7 @@ export type Database = {
           sku: string | null
           updated_at: string
           url: string | null
+          variantes: Json
         }
         Insert: {
           activo?: boolean
@@ -311,6 +312,7 @@ export type Database = {
           sku?: string | null
           updated_at?: string
           url?: string | null
+          variantes?: Json
         }
         Update: {
           activo?: boolean
@@ -327,6 +329,7 @@ export type Database = {
           sku?: string | null
           updated_at?: string
           url?: string | null
+          variantes?: Json
         }
         Relationships: []
       }

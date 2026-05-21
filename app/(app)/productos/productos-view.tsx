@@ -339,6 +339,17 @@ function Row({
       <td className="px-4 py-2.5">
         <div className="font-medium flex items-center gap-2 flex-wrap">
           <span>{p.nombre}</span>
+          {Array.isArray(p.variantes) && p.variantes.length > 0 && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border border-primary/40 bg-primary/10 text-primary"
+              title={p.variantes
+                .map((v) => Object.values((v as { opciones?: Record<string, string> }).opciones ?? {}).join(" · "))
+                .filter(Boolean)
+                .join(" · ")}
+            >
+              {p.variantes.length} variantes
+            </span>
+          )}
           {!p.activo && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border border-[color:var(--arean-warn)]/40 bg-[color:var(--arean-warn)]/10 text-[color:var(--arean-warn)]">
               Descontinuado

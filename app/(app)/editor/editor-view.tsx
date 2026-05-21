@@ -36,6 +36,14 @@ function marcaLabel(marca: string, sources: Source[]): string {
   return sources.find((s) => s.slug === marca)?.nombre ?? marca
 }
 
+type Variante = {
+  sku: string | null
+  opciones: Record<string, string>
+  precio_ars: number
+  imagen_url: string | null
+  disponible: boolean
+}
+
 type ProductoItem = {
   uid: string
   producto_id: string
@@ -46,6 +54,24 @@ type ProductoItem = {
   precio_unitario_ars: number
   cantidad: number
   url_producto: string | null
+  variante_key: string | null // identifies which variant; null for products without variants
+}
+
+function getVariantes(p: Producto): Variante[] {
+  const v = p.variantes as unknown
+  if (!Array.isArray(v)) return []
+  return v as Variante[]
+}
+
+function varianteKey(opciones: Record<string, string>): string {
+  return Object.entries(opciones)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, val]) => val)
+    .join(" · ")
+}
+
+function varianteLabel(v: Variante): string {
+  return Object.values(v.opciones).join(" · ")
 }
 
 type ManoObraItem = {
@@ -83,6 +109,7 @@ export function EditorView({
     nombre: "",
   })
   const [showSendDialog, setShowSendDialog] = useState(false)
+  const [variantPicker, setVariantPicker] = useState<Producto | null>(null)
 
   // Persist panel sizes in localStorage (client-only)
   const [layoutStorage, setLayoutStorage] = useState<Storage | undefined>(undefined)
@@ -110,6 +137,12 @@ export function EditorView({
       .filter((i) => i.tipo === "producto")
       .map((i) => {
         const prod = productos.find((p) => p.id === i.producto_id)
+        // Reconstruct variante_key from concepto if applicable
+        const baseNombre = prod?.nombre
+        let key: string | null = null
+        if (baseNombre && i.concepto !== baseNombre && i.concepto.startsWith(baseNombre + " · ")) {
+          key = i.concepto.slice(baseNombre.length + 3)
+        }
         return {
           uid: i.id,
           producto_id: i.producto_id ?? "",
@@ -120,6 +153,7 @@ export function EditorView({
           precio_unitario_ars: Number(i.precio_unitario_ars),
           cantidad: Number(i.cantidad),
           url_producto: i.url_producto,
+          variante_key: key,
         }
       })
   )
@@ -218,26 +252,40 @@ export function EditorView({
     setShowClienteDropdown(false)
   }
 
-  function addProducto(p: Producto) {
+  function handleProductoClick(p: Producto) {
+    const variantes = getVariantes(p)
+    if (variantes.length > 0) {
+      setVariantPicker(p)
+      setProductoQ("")
+      setShowProductoDropdown(false)
+      return
+    }
+    addProducto(p)
+  }
+
+  function addProducto(p: Producto, variante: Variante | null = null) {
+    const key = variante ? varianteKey(variante.opciones) : null
     setProductoItems((prev) => {
-      const idx = prev.findIndex((i) => i.producto_id === p.id)
+      const idx = prev.findIndex((i) => i.producto_id === p.id && i.variante_key === key)
       if (idx > -1) {
-        toast.message(`+1 ${p.nombre}`)
+        toast.message(`+1 ${p.nombre}${variante ? ` · ${varianteLabel(variante)}` : ""}`)
         return prev.map((it, i) => (i === idx ? { ...it, cantidad: it.cantidad + 1 } : it))
       }
-      toast.message(`Agregado: ${p.nombre}`)
+      const nombreCompuesto = variante ? `${p.nombre} · ${varianteLabel(variante)}` : p.nombre
+      toast.message(`Agregado: ${nombreCompuesto}`)
       return [
         ...prev,
         {
           uid: uid(),
           producto_id: p.id,
-          sku: p.sku,
-          nombre: p.nombre,
+          sku: variante?.sku ?? p.sku,
+          nombre: nombreCompuesto,
           categoria: p.categoria,
           marca: p.marca,
-          precio_unitario_ars: Number(p.precio_origen),
+          precio_unitario_ars: variante?.precio_ars ?? Number(p.precio_origen),
           cantidad: 1,
           url_producto: p.url,
+          variante_key: key,
         },
       ]
     })
@@ -476,7 +524,7 @@ export function EditorView({
             productos={productos}
             sources={sources}
             productosEnCotizacion={new Set(productoItems.map((i) => i.producto_id))}
-            onAdd={addProducto}
+            onProductClick={handleProductoClick}
           />
         </ResizablePanel>
 
@@ -601,23 +649,31 @@ export function EditorView({
                       Sin resultados para &ldquo;{productoQ}&rdquo;
                     </div>
                   ) : (
-                    productoMatches.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => addProducto(p)}
-                        className="w-full text-left px-3 py-2 hover:bg-secondary/60 border-b border-border last:border-b-0 grid grid-cols-[1fr_auto_auto] gap-3 items-center"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium truncate">{p.nombre}</div>
-                          <div className="font-mono text-[10px] text-muted-foreground">
-                            {p.sku ?? "—"} · {p.marca} {p.categoria ? `· ${p.categoria}` : ""}
+                    productoMatches.map((p) => {
+                      const variantesCount = getVariantes(p).length
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => handleProductoClick(p)}
+                          className="w-full text-left px-3 py-2 hover:bg-secondary/60 border-b border-border last:border-b-0 grid grid-cols-[1fr_auto_auto] gap-3 items-center"
+                        >
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">{p.nombre}</div>
+                            <div className="font-mono text-[10px] text-muted-foreground">
+                              {p.sku ?? "—"} · {p.marca} {p.categoria ? `· ${p.categoria}` : ""}
+                              {variantesCount > 0 && (
+                                <span className="text-primary"> · {variantesCount} variantes</span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                        <div className="font-mono text-sm">{formatARS(Number(p.precio_origen))}</div>
-                        <Plus size={14} className="text-primary" />
-                      </button>
-                    ))
+                          <div className="font-mono text-sm">
+                            {variantesCount > 0 ? "desde " : ""}{formatARS(Number(p.precio_origen))}
+                          </div>
+                          <Plus size={14} className="text-primary" />
+                        </button>
+                      )
+                    })
                   )}
                 </div>
               )}
@@ -820,6 +876,17 @@ export function EditorView({
         }}
       />
 
+      {variantPicker && (
+        <VariantPickerDialog
+          producto={variantPicker}
+          onClose={() => setVariantPicker(null)}
+          onPick={(v) => {
+            addProducto(variantPicker, v)
+            setVariantPicker(null)
+          }}
+        />
+      )}
+
       {cotizacion && clienteSeleccionado && (
         <SendCotizacionDialog
           open={showSendDialog}
@@ -839,6 +906,71 @@ export function EditorView({
         />
       )}
     </>
+  )
+}
+
+function VariantPickerDialog({
+  producto,
+  onClose,
+  onPick,
+}: {
+  producto: Producto
+  onClose: () => void
+  onPick: (v: Variante) => void
+}) {
+  const variantes = getVariantes(producto).filter((v) => v.disponible)
+  // Group axes & their unique values
+  const axesNames = variantes[0] ? Object.keys(variantes[0].opciones) : []
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{producto.nombre}</DialogTitle>
+          <DialogDescription>
+            Este producto tiene {variantes.length} variante{variantes.length !== 1 ? "s" : ""}.
+            Elegí la que quieras agregar a la cotización.
+            {axesNames.length > 0 && (
+              <span className="block mt-1 text-[10px] font-mono uppercase tracking-wider">
+                Axes: {axesNames.join(" · ")}
+              </span>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-[420px] overflow-auto flex flex-col gap-1.5">
+          {variantes.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-6 text-center">
+              No hay variantes disponibles para este producto.
+            </div>
+          ) : (
+            variantes.map((v, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onPick(v)}
+                className="text-left px-3 py-2.5 rounded-md border border-border bg-card hover:border-primary/60 hover:bg-secondary/40 transition-colors grid grid-cols-[1fr_auto_auto] gap-3 items-center"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{varianteLabel(v) || "(sin opciones)"}</div>
+                  {v.sku && (
+                    <div className="font-mono text-[10px] text-muted-foreground truncate">
+                      SKU {v.sku}
+                    </div>
+                  )}
+                </div>
+                <div className="font-mono text-sm">{formatARS(v.precio_ars)}</div>
+                <Plus size={14} className="text-primary" />
+              </button>
+            ))
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1025,12 +1157,12 @@ function CatalogoPane({
   productos,
   sources,
   productosEnCotizacion,
-  onAdd,
+  onProductClick,
 }: {
   productos: Producto[]
   sources: Source[]
   productosEnCotizacion: Set<string>
-  onAdd: (p: Producto) => void
+  onProductClick: (p: Producto) => void
 }) {
   const [q, setQ] = useState("")
   const [marca, setMarca] = useState<string>("todos")
@@ -1097,7 +1229,7 @@ function CatalogoPane({
               producto={p}
               sources={sources}
               inCart={productosEnCotizacion.has(p.id)}
-              onClick={() => onAdd(p)}
+              onClick={() => onProductClick(p)}
             />
           ))
         )}
@@ -1142,6 +1274,7 @@ function CatalogCard({
   inCart: boolean
   onClick: () => void
 }) {
+  const variantes = getVariantes(producto)
   return (
     <button
       type="button"
@@ -1159,8 +1292,11 @@ function CatalogCard({
       </div>
       <div className="font-mono text-[10px] text-muted-foreground mb-1 truncate">
         {producto.sku ?? "—"} · {marcaLabel(producto.marca, sources)}
+        {variantes.length > 0 && <span className="text-primary"> · {variantes.length} var.</span>}
       </div>
-      <div className="font-mono text-xs">{formatARS(Number(producto.precio_origen))}</div>
+      <div className="font-mono text-xs">
+        {variantes.length > 0 ? "desde " : ""}{formatARS(Number(producto.precio_origen))}
+      </div>
     </button>
   )
 }

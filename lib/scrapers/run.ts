@@ -57,6 +57,7 @@ async function upsertProducts(
       imagen_url: p.imagen_url,
       activo: p.activo,
       es_manual: false,
+      variantes: p.variantes as unknown as Database["public"]["Tables"]["productos"]["Insert"]["variantes"],
     }))
 
   // Postgrest upsert on the unique constraint (marca, url) — the partial unique index

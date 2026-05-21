@@ -1,17 +1,20 @@
 import "server-only"
 import * as cheerio from "cheerio"
-import type { ScrapedProduct } from "./types"
+import type { ScrapedProduct, ProductoVariante } from "./types"
 
 const USER_AGENT =
   "Mozilla/5.0 (compatible; AreaNCotizadorBot/0.1; +https://arean.com.ar)"
 
 type Variant = {
   product_id: number
-  price_number_raw?: number
-  price_number?: number
+  price_number_raw?: number | null
+  price_number?: number | null
   sku?: string | null
   image_url?: string | null
   available?: boolean
+  option0?: string | null
+  option1?: string | null
+  option2?: string | null
 }
 
 function tryParseVariants(raw: string): Variant[] | null {
@@ -46,19 +49,50 @@ async function scrapeOnePage(baseUrl: string, page: number, marca: string): Prom
 
     const variantsRaw = $el.find("[data-variants]").first().attr("data-variants")
     const variants = variantsRaw ? tryParseVariants(variantsRaw) : null
-    const v = variants?.[0]
 
     const nombre = $el.find(".js-item-name").first().text().trim()
     if (!nombre) return
     const link = $el.find("a.item-link, a[href*='/productos/']").first().attr("href")?.trim()
     if (!link) return
 
+    // Build the list of variantes. We keep only variants with valid price + available.
+    // Skip variants whose all options are null (those are the "single variant" placeholder
+    // representing a product without options — we still want their price but no options entry).
+    const hasMultipleVariants =
+      Array.isArray(variants) &&
+      variants.some((v) => v.option0 != null || v.option1 != null || v.option2 != null)
+
+    const variantesValidas: ProductoVariante[] = []
+    if (Array.isArray(variants)) {
+      for (const v of variants) {
+        const raw = v.price_number_raw
+        const num = v.price_number
+        let price: number | null = null
+        if (typeof raw === "number" && raw > 0) price = raw / 100
+        else if (typeof num === "number" && num > 0) price = num
+        if (price === null) continue
+
+        const opciones: Record<string, string> = {}
+        if (v.option0) opciones["Opción 1"] = v.option0
+        if (v.option1) opciones["Opción 2"] = v.option1
+        if (v.option2) opciones["Opción 3"] = v.option2
+
+        variantesValidas.push({
+          sku: v.sku ?? null,
+          opciones,
+          precio_ars: price,
+          imagen_url: normalizeImage(v.image_url ?? null),
+          disponible: v.available !== false,
+        })
+      }
+    }
+
+    // Compute display precio_ars: prefer the lowest available variant price
     let precio_ars: number | null = null
-    if (v?.price_number_raw && v.price_number_raw > 0) {
-      precio_ars = v.price_number_raw / 100
-    } else if (v?.price_number && v.price_number > 0) {
-      precio_ars = v.price_number
+    if (variantesValidas.length > 0) {
+      precio_ars = Math.min(...variantesValidas.map((vv) => vv.precio_ars))
     } else {
+      // Fallback to the data-product-price attribute
       const priceAttr = $el.find(".js-price-display").first().attr("data-product-price")
       if (priceAttr) {
         const n = Number(priceAttr)
@@ -67,8 +101,11 @@ async function scrapeOnePage(baseUrl: string, page: number, marca: string): Prom
     }
     if (precio_ars === null) return
 
-    const sku = v?.sku ?? null
-    const imagen_url = normalizeImage(v?.image_url ?? $el.find("img.js-item-image").first().attr("src") ?? null)
+    const firstVariant = variantesValidas[0]
+    const sku = firstVariant?.sku ?? null
+    const imagen_url = normalizeImage(
+      firstVariant?.imagen_url ?? $el.find("img.js-item-image").first().attr("src") ?? null
+    )
 
     products.push({
       sku,
@@ -79,7 +116,10 @@ async function scrapeOnePage(baseUrl: string, page: number, marca: string): Prom
       precio_ars,
       url: link,
       imagen_url,
-      activo: v?.available !== false,
+      activo: variantesValidas.some((v) => v.disponible),
+      // Only store the variantes array if the product actually has multiple variants with options.
+      // Single-variant products don't need the array.
+      variantes: hasMultipleVariants ? variantesValidas : [],
     })
   })
   return products
