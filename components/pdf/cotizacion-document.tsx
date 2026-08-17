@@ -13,6 +13,8 @@ export type PdfClienteData = {
 export type PdfItemData = {
   tipo: "producto" | "mano_obra"
   concepto: string
+  aclaracion?: string | null
+  tiene_cantidad?: boolean
   cantidad: number
   precio_unitario_ars: number
   url_producto: string | null
@@ -132,6 +134,7 @@ const styles = StyleSheet.create({
   rowSubtotal: { width: 80, textAlign: "right", fontFamily: "Courier" },
   rowConceptoText: { fontSize: 9 },
   rowMoText: { fontSize: 9, fontStyle: "italic" },
+  rowAclaracionText: { fontSize: 7.5, color: COLOR.muted, marginTop: 2, lineHeight: 1.3 },
   rowSubLink: { fontSize: 7, color: COLOR.accent, marginTop: 1, textDecoration: "none" },
 
   totalsBlock: { marginTop: 14, marginLeft: "auto", width: "55%" },
@@ -286,25 +289,30 @@ export function CotizacionPdf({
             </Text>
           </View>
         ) : (
-          items.map((it, idx) => (
-            <View key={idx} style={styles.row}>
-              <View style={styles.rowConcepto}>
-                {it.tipo === "mano_obra" ? (
-                  <Text style={styles.rowMoText}>{it.concepto}</Text>
-                ) : (
-                  <Text style={styles.rowConceptoText}>{it.concepto}</Text>
-                )}
-                {it.url_producto && (
-                  <Link src={it.url_producto} style={styles.rowSubLink}>
-                    {it.marca && it.marca !== "manual" ? `ver en ${it.marca}` : "ver producto"}
-                  </Link>
-                )}
+          items.map((it, idx) => {
+            const showQty = it.tipo === "producto" || it.tiene_cantidad === true
+            const subtotal = showQty ? it.precio_unitario_ars * it.cantidad : it.precio_unitario_ars
+            return (
+              <View key={idx} style={styles.row}>
+                <View style={styles.rowConcepto}>
+                  <Text style={it.tipo === "mano_obra" ? styles.rowMoText : styles.rowConceptoText}>
+                    {it.concepto}
+                  </Text>
+                  {it.aclaracion ? (
+                    <Text style={styles.rowAclaracionText}>{it.aclaracion}</Text>
+                  ) : null}
+                  {it.url_producto && (
+                    <Link src={it.url_producto} style={styles.rowSubLink}>
+                      {it.marca && it.marca !== "manual" ? `ver en ${it.marca}` : "ver producto"}
+                    </Link>
+                  )}
+                </View>
+                <Text style={styles.rowCant}>{showQty ? it.cantidad : "—"}</Text>
+                <Text style={styles.rowUnit}>{showQty ? fmtARS(it.precio_unitario_ars) : "—"}</Text>
+                <Text style={styles.rowSubtotal}>{fmtARS(subtotal)}</Text>
               </View>
-              <Text style={styles.rowCant}>{it.cantidad}</Text>
-              <Text style={styles.rowUnit}>{fmtARS(it.precio_unitario_ars)}</Text>
-              <Text style={styles.rowSubtotal}>{fmtARS(it.precio_unitario_ars * it.cantidad)}</Text>
-            </View>
-          ))
+            )
+          })
         )}
 
         {/* Totals */}

@@ -173,14 +173,23 @@ export async function getPdfPayload(id: string): Promise<Result<PdfPayload>> {
             direccion: cot.clientes.direccion,
           }
         : null,
-      items: (items ?? []).map((i) => ({
-        tipo: i.tipo,
-        concepto: i.concepto,
-        cantidad: Number(i.cantidad),
-        precio_unitario_ars: Number(i.precio_unitario_ars),
-        url_producto: i.url_producto,
-        marca: (i.productos as { marca: string } | null)?.marca ?? null,
-      })),
+      items: (items ?? []).map((i) => {
+        const lines = (i.concepto || "").split("\n")
+        const concepto = lines[0] ?? ""
+        const aclaracion = lines.slice(1).join("\n").trim() || null
+        const isMo = i.tipo === "mano_obra"
+        const tiene_cantidad = isMo ? Number(i.cantidad) > 1 : true
+        return {
+          tipo: i.tipo,
+          concepto,
+          aclaracion,
+          tiene_cantidad,
+          cantidad: Number(i.cantidad),
+          precio_unitario_ars: Number(i.precio_unitario_ars),
+          url_producto: i.url_producto,
+          marca: (i.productos as { marca: string } | null)?.marca ?? null,
+        }
+      }),
       configuracion: {
         razon_social: conf.razon_social,
         cuit: conf.cuit,

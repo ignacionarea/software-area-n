@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, useTransition, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
-  Search, Plus, Minus, X, Save, Send, Download, Package, FilePenLine, Check, Mail,
+  Search, Plus, Minus, X, Save, Send, Download, Package, FilePenLine, Check, Mail, ArrowUp, ArrowDown,
 } from "lucide-react"
 import { downloadCotizacionPdf } from "@/components/pdf/download"
 import { SendCotizacionDialog } from "@/components/email/send-cotizacion-dialog"
@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils"
 import { formatARS, formatUSD, formatCotizacionNumero } from "@/lib/format"
 import type { Database } from "@/types/database"
 import { saveCotizacion, saveAndGo, type EditorPayload, type EditorItemInput } from "./actions"
+import type { PdfItemData } from "@/components/pdf/cotizacion-document"
 
 type Cliente = Database["public"]["Tables"]["clientes"]["Row"]
 type Producto = Database["public"]["Tables"]["productos"]["Row"]
@@ -49,6 +50,7 @@ type ProductoItem = {
   producto_id: string
   sku: string | null
   nombre: string
+  aclaracion: string
   categoria: string | null
   marca: string
   precio_unitario_ars: number
@@ -77,6 +79,10 @@ function varianteLabel(v: Variante): string {
 type ManoObraItem = {
   uid: string
   concepto: string
+  aclaracion: string
+  tiene_cantidad: boolean
+  cantidad: number
+  precio_unitario: number
   monto: number
 }
 
@@ -137,17 +143,22 @@ export function EditorView({
       .filter((i) => i.tipo === "producto")
       .map((i) => {
         const prod = productos.find((p) => p.id === i.producto_id)
+        const lines = (i.concepto || "").split("\n")
+        const rawConcepto = lines[0] ?? ""
+        const aclaracion = lines.slice(1).join("\n").trim()
+
         // Reconstruct variante_key from concepto if applicable
         const baseNombre = prod?.nombre
         let key: string | null = null
-        if (baseNombre && i.concepto !== baseNombre && i.concepto.startsWith(baseNombre + " · ")) {
-          key = i.concepto.slice(baseNombre.length + 3)
+        if (baseNombre && rawConcepto !== baseNombre && rawConcepto.startsWith(baseNombre + " · ")) {
+          key = rawConcepto.slice(baseNombre.length + 3)
         }
         return {
           uid: i.id,
           producto_id: i.producto_id ?? "",
           sku: prod?.sku ?? null,
-          nombre: i.concepto,
+          nombre: rawConcepto,
+          aclaracion,
           categoria: prod?.categoria ?? null,
           marca: prod?.marca ?? "—",
           precio_unitario_ars: Number(i.precio_unitario_ars),
@@ -160,11 +171,24 @@ export function EditorView({
   const [manoObras, setManoObras] = useState<ManoObraItem[]>(() =>
     existingItems
       .filter((i) => i.tipo === "mano_obra")
-      .map((i) => ({
-        uid: i.id,
-        concepto: i.concepto,
-        monto: Number(i.precio_unitario_ars) * Number(i.cantidad),
-      }))
+      .map((i) => {
+        const lines = (i.concepto || "").split("\n")
+        const concepto = lines[0] ?? ""
+        const aclaracion = lines.slice(1).join("\n").trim()
+        const tiene_cantidad = Number(i.cantidad) > 1
+        const cant = Number(i.cantidad) || 1
+        const pUnit = Number(i.precio_unitario_ars)
+        const monto = tiene_cantidad ? pUnit * cant : pUnit
+        return {
+          uid: i.id,
+          concepto,
+          aclaracion,
+          tiene_cantidad,
+          cantidad: cant,
+          precio_unitario: pUnit,
+          monto,
+        }
+      })
   )
 
   // Cliente search
@@ -280,6 +304,7 @@ export function EditorView({
           producto_id: p.id,
           sku: variante?.sku ?? p.sku,
           nombre: nombreCompuesto,
+          aclaracion: "",
           categoria: p.categoria,
           marca: p.marca,
           precio_unitario_ars: variante?.precio_ars ?? Number(p.precio_origen),
@@ -306,15 +331,60 @@ export function EditorView({
       prev.map((i) => (i.uid === uidVal ? { ...i, cantidad: n } : i)).filter((i) => i.cantidad > 0)
     )
   }
+  function updateProducto(uidVal: string, patch: Partial<ProductoItem>) {
+    setProductoItems((prev) => prev.map((i) => (i.uid === uidVal ? { ...i, ...patch } : i)))
+  }
+  function moveProducto(index: number, direction: "up" | "down") {
+    setProductoItems((prev) => {
+      const next = [...prev]
+      const targetIdx = direction === "up" ? index - 1 : index + 1
+      if (targetIdx < 0 || targetIdx >= next.length) return prev
+      const temp = next[index]
+      next[index] = next[targetIdx]
+      next[targetIdx] = temp
+      return next
+    })
+  }
   function removeProducto(uidVal: string) {
     setProductoItems((prev) => prev.filter((i) => i.uid !== uidVal))
   }
 
   function addManoObra() {
-    setManoObras((prev) => [...prev, { uid: uid(), concepto: "", monto: 0 }])
+    setManoObras((prev) => [
+      ...prev,
+      {
+        uid: uid(),
+        concepto: "",
+        aclaracion: "",
+        tiene_cantidad: false,
+        cantidad: 1,
+        precio_unitario: 0,
+        monto: 0,
+      },
+    ])
   }
   function updateMo(uidVal: string, patch: Partial<ManoObraItem>) {
-    setManoObras((prev) => prev.map((m) => (m.uid === uidVal ? { ...m, ...patch } : m)))
+    setManoObras((prev) =>
+      prev.map((m) => {
+        if (m.uid !== uidVal) return m
+        const updated = { ...m, ...patch }
+        if (updated.tiene_cantidad) {
+          updated.monto = (Number(updated.cantidad) || 0) * (Number(updated.precio_unitario) || 0)
+        }
+        return updated
+      })
+    )
+  }
+  function moveMo(index: number, direction: "up" | "down") {
+    setManoObras((prev) => {
+      const next = [...prev]
+      const targetIdx = direction === "up" ? index - 1 : index + 1
+      if (targetIdx < 0 || targetIdx >= next.length) return prev
+      const temp = next[index]
+      next[index] = next[targetIdx]
+      next[targetIdx] = temp
+      return next
+    })
   }
   function removeMo(uidVal: string) {
     setManoObras((prev) => prev.filter((m) => m.uid !== uidVal))
@@ -327,6 +397,8 @@ export function EditorView({
         tipo: "producto",
         producto_id: p.producto_id,
         concepto: p.nombre,
+        aclaracion: p.aclaracion || null,
+        tiene_cantidad: true,
         cantidad: p.cantidad,
         precio_unitario_ars: p.precio_unitario_ars,
         url_producto: p.url_producto,
@@ -338,8 +410,10 @@ export function EditorView({
         tipo: "mano_obra",
         producto_id: null,
         concepto: m.concepto.trim() || "Mano de obra",
-        cantidad: 1,
-        precio_unitario_ars: Number(m.monto) || 0,
+        aclaracion: m.aclaracion || null,
+        tiene_cantidad: m.tiene_cantidad,
+        cantidad: m.tiene_cantidad ? (Number(m.cantidad) || 1) : 1,
+        precio_unitario_ars: m.tiene_cantidad ? (Number(m.precio_unitario) || 0) : (Number(m.monto) || 0),
         url_producto: null,
       })
     }
@@ -384,10 +458,12 @@ export function EditorView({
       toast.error("Agregá productos o mano de obra antes de descargar")
       return
     }
-    const items = [
+    const pdfItems: PdfItemData[] = [
       ...productoItems.map((p) => ({
         tipo: "producto" as const,
         concepto: p.nombre,
+        aclaracion: p.aclaracion || null,
+        tiene_cantidad: true,
         cantidad: p.cantidad,
         precio_unitario_ars: p.precio_unitario_ars,
         url_producto: p.url_producto,
@@ -398,9 +474,12 @@ export function EditorView({
         .map((m) => ({
           tipo: "mano_obra" as const,
           concepto: m.concepto.trim() || "Mano de obra",
-          cantidad: 1,
-          precio_unitario_ars: Number(m.monto) || 0,
+          aclaracion: m.aclaracion || null,
+          tiene_cantidad: m.tiene_cantidad,
+          cantidad: m.tiene_cantidad ? (Number(m.cantidad) || 1) : 1,
+          precio_unitario_ars: m.tiene_cantidad ? (Number(m.precio_unitario) || 0) : (Number(m.monto) || 0),
           url_producto: null,
+          marca: null,
         })),
     ]
     const logoUrl = `${window.location.origin}/logo.png`
@@ -420,7 +499,7 @@ export function EditorView({
               direccion: clienteSeleccionado.direccion,
             }
           : null,
-        items,
+        items: pdfItems,
         subtotalProductos: totals.subProductos,
         subtotalManoObra: totals.subMo,
         total: totals.total,
@@ -680,7 +759,8 @@ export function EditorView({
             </div>
 
             <div className="border border-border rounded-md bg-card overflow-hidden">
-              <div className="grid grid-cols-[1fr_120px_120px_120px_40px] text-[11px] font-mono uppercase tracking-wider text-muted-foreground bg-secondary/50 px-3 py-2">
+              <div className="grid grid-cols-[36px_1fr_120px_120px_120px_40px] text-[11px] font-mono uppercase tracking-wider text-muted-foreground bg-secondary/50 px-3 py-2">
+                <div />
                 <div>Concepto</div>
                 <div className="text-center">Cant.</div>
                 <div className="text-right">Unit. ARS</div>
@@ -693,50 +773,81 @@ export function EditorView({
                   Sin productos. Buscá arriba para agregar.
                 </div>
               ) : (
-                productoItems.map((it) => (
+                productoItems.map((it, idx) => (
                   <div
                     key={it.uid}
-                    className="grid grid-cols-[1fr_120px_120px_120px_40px] items-center px-3 py-2 border-t border-border"
+                    className="flex flex-col gap-1.5 px-3 py-2 border-t border-border"
                   >
-                    <div className="min-w-0 pr-2">
-                      <div className="text-sm font-medium truncate">{it.nombre}</div>
-                      <div className="font-mono text-[10px] text-muted-foreground truncate">
-                        {it.sku ?? "—"} · {it.marca} {it.categoria ? `· ${it.categoria}` : ""}
+                    <div className="grid grid-cols-[36px_1fr_120px_120px_120px_40px] items-center">
+                      <div className="flex flex-col gap-0.5 pr-2">
+                        <button
+                          type="button"
+                          onClick={() => moveProducto(idx, "up")}
+                          disabled={idx === 0}
+                          className="w-5 h-4 grid place-items-center rounded hover:bg-secondary text-muted-foreground disabled:opacity-20 disabled:hover:bg-transparent"
+                          title="Mover arriba"
+                        >
+                          <ArrowUp size={11} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveProducto(idx, "down")}
+                          disabled={idx === productoItems.length - 1}
+                          className="w-5 h-4 grid place-items-center rounded hover:bg-secondary text-muted-foreground disabled:opacity-20 disabled:hover:bg-transparent"
+                          title="Mover abajo"
+                        >
+                          <ArrowDown size={11} />
+                        </button>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-1 justify-center">
+                      <div className="min-w-0 pr-2">
+                        <div className="text-sm font-medium truncate">{it.nombre}</div>
+                        <div className="font-mono text-[10px] text-muted-foreground truncate">
+                          {it.sku ?? "—"} · {it.marca} {it.categoria ? `· ${it.categoria}` : ""}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 justify-center">
+                        <button
+                          type="button"
+                          onClick={() => updateQty(it.uid, -1)}
+                          className="w-6 h-6 grid place-items-center rounded border border-border hover:bg-secondary"
+                        >
+                          <Minus size={11} />
+                        </button>
+                        <input
+                          value={it.cantidad}
+                          onChange={(e) => setQty(it.uid, e.target.value)}
+                          className="w-10 h-6 text-center font-mono text-sm bg-transparent border border-border rounded"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateQty(it.uid, +1)}
+                          className="w-6 h-6 grid place-items-center rounded border border-border hover:bg-secondary"
+                        >
+                          <Plus size={11} />
+                        </button>
+                      </div>
+                      <div className="text-right font-mono text-sm">{formatARS(it.precio_unitario_ars)}</div>
+                      <div className="text-right font-mono text-sm font-medium">
+                        {formatARS(it.precio_unitario_ars * it.cantidad)}
+                      </div>
                       <button
                         type="button"
-                        onClick={() => updateQty(it.uid, -1)}
-                        className="w-6 h-6 grid place-items-center rounded border border-border hover:bg-secondary"
+                        onClick={() => removeProducto(it.uid)}
+                        className="w-7 h-7 grid place-items-center rounded hover:bg-secondary text-muted-foreground ml-auto"
+                        title="Quitar"
                       >
-                        <Minus size={11} />
+                        <X size={13} />
                       </button>
-                      <input
-                        value={it.cantidad}
-                        onChange={(e) => setQty(it.uid, e.target.value)}
-                        className="w-10 h-6 text-center font-mono text-sm bg-transparent border border-border rounded"
+                    </div>
+
+                    <div className="pl-9 pr-8">
+                      <Input
+                        placeholder="Aclaración / detalle del producto (opcional)..."
+                        value={it.aclaracion || ""}
+                        onChange={(e) => updateProducto(it.uid, { aclaracion: e.target.value })}
+                        className="h-7 text-xs text-muted-foreground bg-muted/20 border-dashed placeholder:text-muted-foreground/50"
                       />
-                      <button
-                        type="button"
-                        onClick={() => updateQty(it.uid, +1)}
-                        className="w-6 h-6 grid place-items-center rounded border border-border hover:bg-secondary"
-                      >
-                        <Plus size={11} />
-                      </button>
                     </div>
-                    <div className="text-right font-mono text-sm">{formatARS(it.precio_unitario_ars)}</div>
-                    <div className="text-right font-mono text-sm font-medium">
-                      {formatARS(it.precio_unitario_ars * it.cantidad)}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeProducto(it.uid)}
-                      className="w-7 h-7 grid place-items-center rounded hover:bg-secondary text-muted-foreground"
-                      title="Quitar"
-                    >
-                      <X size={13} />
-                    </button>
                   </div>
                 ))
               )}
@@ -764,30 +875,127 @@ export function EditorView({
                   <div
                     key={m.uid}
                     className={cn(
-                      "grid grid-cols-[1fr_180px_40px] items-center gap-2 px-3 py-2.5",
+                      "flex flex-col gap-2 p-3 bg-card transition-colors",
                       idx > 0 && "border-t border-border"
                     )}
                   >
-                    <Input
-                      placeholder={`Concepto ${idx + 1}: ej "Instalación 8 puntos"`}
-                      value={m.concepto}
-                      onChange={(e) => updateMo(m.uid, { concepto: e.target.value })}
-                    />
-                    <Input
-                      type="number"
-                      placeholder="$ 0"
-                      className="font-mono text-right"
-                      value={m.monto || ""}
-                      onChange={(e) => updateMo(m.uid, { monto: Number(e.target.value) || 0 })}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeMo(m.uid)}
-                      className="w-7 h-7 grid place-items-center rounded hover:bg-secondary text-muted-foreground"
-                      title="Quitar"
-                    >
-                      <X size={13} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {/* Subir / Bajar */}
+                      <div className="flex flex-col gap-0.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => moveMo(idx, "up")}
+                          disabled={idx === 0}
+                          className="w-5 h-4 grid place-items-center rounded hover:bg-secondary text-muted-foreground disabled:opacity-20 disabled:hover:bg-transparent"
+                          title="Mover arriba"
+                        >
+                          <ArrowUp size={11} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveMo(idx, "down")}
+                          disabled={idx === manoObras.length - 1}
+                          className="w-5 h-4 grid place-items-center rounded hover:bg-secondary text-muted-foreground disabled:opacity-20 disabled:hover:bg-transparent"
+                          title="Mover abajo"
+                        >
+                          <ArrowDown size={11} />
+                        </button>
+                      </div>
+
+                      <span className="font-mono text-[11px] text-muted-foreground w-4 text-center shrink-0">
+                        #{idx + 1}
+                      </span>
+
+                      {/* Título principal del concepto */}
+                      <div className="flex-1 min-w-0">
+                        <Input
+                          placeholder={`Concepto: ej "Dimerización de tiras led sector Estudio"`}
+                          value={m.concepto}
+                          onChange={(e) => updateMo(m.uid, { concepto: e.target.value })}
+                          className="h-9 text-sm font-medium"
+                        />
+                      </div>
+
+                      {/* Toggle Cantidad vs Monto Global */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateMo(m.uid, {
+                            tiene_cantidad: !m.tiene_cantidad,
+                            precio_unitario: !m.tiene_cantidad ? m.monto : m.precio_unitario,
+                          })
+                        }
+                        className={cn(
+                          "h-9 px-2.5 rounded border text-xs font-mono transition-colors shrink-0 flex items-center gap-1",
+                          m.tiene_cantidad
+                            ? "bg-primary/15 border-primary/40 text-primary font-medium"
+                            : "bg-muted/40 border-border text-muted-foreground hover:bg-secondary"
+                        )}
+                        title={m.tiene_cantidad ? "Cambiar a monto global directo" : "Habilitar cálculo por cantidad (Cant. x P. unit)"}
+                      >
+                        <span>{m.tiene_cantidad ? "Por cantidad" : "Monto global"}</span>
+                      </button>
+
+                      {/* Campos numéricos */}
+                      {m.tiene_cantidad ? (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Input
+                            type="number"
+                            min="1"
+                            placeholder="Cant."
+                            className="w-14 h-9 font-mono text-center text-xs"
+                            value={m.cantidad || ""}
+                            onChange={(e) => updateMo(m.uid, { cantidad: Math.max(1, Number(e.target.value) || 1) })}
+                          />
+                          <span className="text-muted-foreground text-xs font-mono">×</span>
+                          <Input
+                            type="number"
+                            placeholder="$ Unit."
+                            className="w-24 h-9 font-mono text-right text-xs"
+                            value={m.precio_unitario || ""}
+                            onChange={(e) => updateMo(m.uid, { precio_unitario: Number(e.target.value) || 0 })}
+                          />
+                          <div className="w-24 text-right font-mono text-xs font-semibold truncate pl-1">
+                            {formatARS((m.cantidad || 1) * (m.precio_unitario || 0))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Input
+                            type="number"
+                            placeholder="$ Monto"
+                            className="w-32 h-9 font-mono text-right text-sm font-semibold"
+                            value={m.monto || ""}
+                            onChange={(e) =>
+                              updateMo(m.uid, {
+                                monto: Number(e.target.value) || 0,
+                                precio_unitario: Number(e.target.value) || 0,
+                              })
+                            }
+                          />
+                        </div>
+                      )}
+
+                      {/* Botón quitar */}
+                      <button
+                        type="button"
+                        onClick={() => removeMo(m.uid)}
+                        className="w-8 h-8 grid place-items-center rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground shrink-0"
+                        title="Quitar"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+
+                    {/* Aclaración / Detalle de la tarea */}
+                    <div className="pl-11 pr-10">
+                      <Input
+                        placeholder="Aclaración / detalle (ej: Incluye las 4 tiras led cálidas + transformador...)"
+                        value={m.aclaracion || ""}
+                        onChange={(e) => updateMo(m.uid, { aclaracion: e.target.value })}
+                        className="h-8 text-xs text-muted-foreground bg-muted/20 border-dashed placeholder:text-muted-foreground/50"
+                      />
+                    </div>
                   </div>
                 ))
               )}
@@ -1394,8 +1602,13 @@ function PreviewPane({
             )}
             {productoItems.map((it) => (
               <tr key={it.uid} className="border-b border-[oklch(0.90_0.010_80)]">
-                <td className="py-1 pr-2">
-                  <div>{it.nombre}</div>
+                <td className="py-1.5 pr-2">
+                  <div className="font-medium">{it.nombre}</div>
+                  {it.aclaracion && (
+                    <div className="text-[9px] text-[oklch(0.48_0.010_145)] mt-0.5 leading-snug">
+                      {it.aclaracion}
+                    </div>
+                  )}
                   {it.url_producto && (
                     <a
                       href={it.url_producto}
@@ -1407,19 +1620,32 @@ function PreviewPane({
                     </a>
                   )}
                 </td>
-                <td className="text-right font-mono py-1">{it.cantidad}</td>
-                <td className="text-right font-mono py-1">{formatARS(it.precio_unitario_ars)}</td>
-                <td className="text-right font-mono py-1">{formatARS(it.precio_unitario_ars * it.cantidad)}</td>
+                <td className="text-right font-mono py-1.5">{it.cantidad}</td>
+                <td className="text-right font-mono py-1.5">{formatARS(it.precio_unitario_ars)}</td>
+                <td className="text-right font-mono py-1.5 font-medium">{formatARS(it.precio_unitario_ars * it.cantidad)}</td>
               </tr>
             ))}
             {manoObras.map(
               (m) =>
                 (m.concepto.trim() || m.monto > 0) && (
                   <tr key={m.uid} className="border-b border-[oklch(0.90_0.010_80)]">
-                    <td className="py-1 pr-2 italic">{m.concepto || "Mano de obra"}</td>
-                    <td className="text-right font-mono py-1">1</td>
-                    <td className="text-right font-mono py-1">{formatARS(m.monto)}</td>
-                    <td className="text-right font-mono py-1">{formatARS(m.monto)}</td>
+                    <td className="py-1.5 pr-2">
+                      <div className="italic font-medium">{m.concepto || "Mano de obra"}</div>
+                      {m.aclaracion && (
+                        <div className="text-[9px] text-[oklch(0.48_0.010_145)] not-italic mt-0.5 leading-snug">
+                          {m.aclaracion}
+                        </div>
+                      )}
+                    </td>
+                    <td className="text-right font-mono py-1.5 text-[oklch(0.55_0.010_145)]">
+                      {m.tiene_cantidad ? m.cantidad : "—"}
+                    </td>
+                    <td className="text-right font-mono py-1.5 text-[oklch(0.55_0.010_145)]">
+                      {m.tiene_cantidad ? formatARS(m.precio_unitario || 0) : "—"}
+                    </td>
+                    <td className="text-right font-mono py-1.5 font-medium">
+                      {formatARS(m.tiene_cantidad ? (m.cantidad || 1) * (m.precio_unitario || 0) : m.monto)}
+                    </td>
                   </tr>
                 )
             )}

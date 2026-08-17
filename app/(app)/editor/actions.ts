@@ -12,6 +12,8 @@ export type EditorItemInput = {
   tipo: TipoItem
   producto_id: string | null
   concepto: string
+  aclaracion?: string | null
+  tiene_cantidad?: boolean
   cantidad: number
   precio_unitario_ars: number
   url_producto: string | null
@@ -47,17 +49,23 @@ async function replaceItems(
 
   if (items.length === 0) return null
 
-  const rows = items.map((i, idx) => ({
-    cotizacion_id: cotId,
-    tipo: i.tipo,
-    producto_id: i.tipo === "producto" ? i.producto_id : null,
-    concepto: i.concepto,
-    cantidad: i.cantidad,
-    precio_unitario_ars: i.precio_unitario_ars,
-    precio_unitario_usd: toUsd(i.precio_unitario_ars, dolar),
-    url_producto: i.url_producto,
-    orden: idx,
-  }))
+  const rows = items.map((i, idx) => {
+    const fullConcepto = i.aclaracion?.trim()
+      ? `${i.concepto.trim()}\n${i.aclaracion.trim()}`
+      : i.concepto.trim()
+    const cant = i.tiene_cantidad !== false ? i.cantidad : 1
+    return {
+      cotizacion_id: cotId,
+      tipo: i.tipo,
+      producto_id: i.tipo === "producto" ? i.producto_id : null,
+      concepto: fullConcepto,
+      cantidad: cant,
+      precio_unitario_ars: i.precio_unitario_ars,
+      precio_unitario_usd: toUsd(i.precio_unitario_ars, dolar),
+      url_producto: i.url_producto,
+      orden: idx,
+    }
+  })
 
   const { error: insErr } = await supabase.from("items_cotizacion").insert(rows)
   return insErr?.message ?? null
