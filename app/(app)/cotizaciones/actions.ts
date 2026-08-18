@@ -6,7 +6,7 @@ import type { Database } from "@/types/database"
 import { getResend, getEmailFrom, getBccEmails } from "@/lib/email/resend"
 import { bodyToHtml } from "@/lib/email/cotizacion-template"
 import { renderCotizacionPdfToBuffer } from "@/lib/pdf/render-cotizacion"
-import { formatCotizacionNumero } from "@/lib/format"
+import { formatCotizacionNumero, parseCotizacionNotas, serializeCotizacionNotas, type CotizacionMetadata } from "@/lib/format"
 
 type EstadoCotizacion = Database["public"]["Enums"]["estado_cotizacion"]
 type Result<T = void> = { ok: true; data: T } | { ok: false; error: string }
@@ -16,6 +16,8 @@ export type PdfPayload = {
   fecha_emision: string
   validez_dias: number
   cotizacion_dolar: number
+  mostrar_usd: boolean
+  condiciones_personalizadas: string | null
   cliente: {
     nombre: string
     cuit_dni: string | null
@@ -26,6 +28,8 @@ export type PdfPayload = {
   items: Array<{
     tipo: "producto" | "mano_obra"
     concepto: string
+    aclaracion?: string | null
+    tiene_cantidad?: boolean
     cantidad: number
     precio_unitario_ars: number
     url_producto: string | null
@@ -82,6 +86,8 @@ export async function sendCotizacionByEmail(input: SendEmailInput): Promise<Resu
       fechaEmision: p.fecha_emision,
       validezDias: p.validez_dias,
       cotizacionDolar: p.cotizacion_dolar,
+      mostrarUsd: p.mostrar_usd,
+      condicionesPersonalizadas: p.condiciones_personalizadas,
       cliente: p.cliente,
       items: p.items,
       subtotalProductos,
@@ -157,6 +163,8 @@ export async function getPdfPayload(id: string): Promise<Result<PdfPayload>> {
   if (itemsErr) return { ok: false, error: itemsErr.message }
   if (confErr || !conf) return { ok: false, error: confErr?.message ?? "No hay configuración" }
 
+  const meta = parseCotizacionNotas(cot.notas)
+
   return {
     ok: true,
     data: {
@@ -164,6 +172,8 @@ export async function getPdfPayload(id: string): Promise<Result<PdfPayload>> {
       fecha_emision: cot.fecha_emision,
       validez_dias: cot.validez_dias,
       cotizacion_dolar: Number(cot.cotizacion_dolar),
+      mostrar_usd: meta.mostrarUsd ?? true,
+      condiciones_personalizadas: meta.condiciones || null,
       cliente: cot.clientes
         ? {
             nombre: cot.clientes.nombre,

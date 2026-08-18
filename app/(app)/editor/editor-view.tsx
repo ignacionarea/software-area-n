@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { createCliente } from "../clientes/actions"
 import { cn } from "@/lib/utils"
-import { formatARS, formatUSD, formatCotizacionNumero } from "@/lib/format"
+import { formatARS, formatUSD, formatCotizacionNumero, parseCotizacionNotas, serializeCotizacionNotas } from "@/lib/format"
 import type { Database } from "@/types/database"
 import { saveCotizacion, saveAndGo, type EditorPayload, type EditorItemInput } from "./actions"
 import type { PdfItemData } from "@/components/pdf/cotizacion-document"
@@ -130,12 +130,19 @@ export function EditorView({
 
   // Initial state from existing cotización or defaults
   const today = new Date().toISOString().slice(0, 10)
+  const initialMeta = useMemo(() => parseCotizacionNotas(cotizacion?.notas ?? null), [cotizacion?.notas])
   const [clienteId, setClienteId] = useState<string | null>(cotizacion?.cliente_id ?? null)
   const [fecha, setFecha] = useState<string>(cotizacion?.fecha_emision ?? today)
   const [validezDias, setValidezDias] = useState<number>(
     cotizacion?.validez_dias ?? configuracion.validez_default_dias
   )
-  const [notas, setNotas] = useState<string>(cotizacion?.notas ?? "")
+  const [mostrarUsd, setMostrarUsd] = useState<boolean>(initialMeta.mostrarUsd ?? true)
+  const [condiciones, setCondiciones] = useState<string>(
+    initialMeta.condiciones !== undefined && initialMeta.condiciones !== ""
+      ? initialMeta.condiciones
+      : (configuracion.texto_legal_pdf || "")
+  )
+  const [notas, setNotas] = useState<string>(initialMeta.notas ?? "")
   const [estado] = useState<EstadoCotizacion>(cotizacion?.estado ?? "borrador")
 
   const [productoItems, setProductoItems] = useState<ProductoItem[]>(() =>
@@ -417,13 +424,18 @@ export function EditorView({
         url_producto: null,
       })
     }
+    const serializedNotas = serializeCotizacionNotas({
+      notas: notas.trim(),
+      mostrarUsd,
+      condiciones: condiciones.trim(),
+    })
     return {
       id: cotizacion?.id,
       cliente_id: clienteId,
       fecha_emision: fecha,
       validez_dias: validezDias,
       cotizacion_dolar: cotizacion?.cotizacion_dolar ?? dolarVenta,
-      notas: notas.trim() || null,
+      notas: serializedNotas,
       estado: targetEstado,
       items,
     }
@@ -490,6 +502,8 @@ export function EditorView({
         fechaEmision: fecha,
         validezDias,
         cotizacionDolar: cotizacion?.cotizacion_dolar ?? dolarVenta,
+        mostrarUsd,
+        condicionesPersonalizadas: condiciones.trim() || null,
         cliente: clienteSeleccionado
           ? {
               nombre: clienteSeleccionado.nombre,
@@ -1034,17 +1048,56 @@ export function EditorView({
                 </span>
               </div>
             </div>
+
+            {/* Switch / Toggle para mostrar o no conversión a USD */}
+            <div className="mt-3 flex items-center justify-between p-3.5 rounded-md border border-border bg-card">
+              <div className="flex flex-col gap-0.5">
+                <div className="text-xs font-medium">Conversión y tipo de cambio USD en el PDF</div>
+                <div className="text-[11px] text-muted-foreground">
+                  {mostrarUsd
+                    ? "Activado: Muestra la cotización del dólar y el total equivalente en USD en el presupuesto."
+                    : "Desactivado: Presupuesto 100% en pesos (ARS), no muestra cotización de dólar ni USD en el PDF."}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMostrarUsd((v) => !v)}
+                className={cn(
+                  "px-3 py-1.5 rounded text-xs font-mono font-medium border transition-colors shrink-0 ml-3",
+                  mostrarUsd
+                    ? "bg-primary/15 border-primary/40 text-primary"
+                    : "bg-muted/50 border-border text-muted-foreground hover:bg-secondary"
+                )}
+              >
+                {mostrarUsd ? "✓ Mostrar USD" : "Solo Pesos (ARS)"}
+              </button>
+            </div>
+          </section>
+
+          {/* Condiciones del presupuesto */}
+          <section>
+            <SectionHeader
+              title="Condiciones del presupuesto (PDF)"
+              sub="aparece al pie del PDF · editable para este proyecto"
+            />
+            <Textarea
+              rows={3}
+              value={condiciones}
+              onChange={(e) => setCondiciones(e.target.value)}
+              placeholder="Escribí aquí las condiciones de pago, validez de la oferta, plazos de entrega, etc."
+              className="text-xs leading-relaxed"
+            />
           </section>
 
           {/* Notas internas */}
           <section>
-            <SectionHeader title="Notas internas" sub="opcional · no aparece en el PDF" />
+            <SectionHeader title="Notas internas" sub="opcional · solo uso interno, no aparece en el PDF" />
             <Textarea
-              rows={3}
+              rows={2}
               value={notas}
               onChange={(e) => setNotas(e.target.value)}
-              placeholder="Recordatorios, condiciones especiales con el cliente, etc."
-              className="text-sm"
+              placeholder="Recordatorios, acuerdos internos, etc."
+              className="text-xs"
             />
           </section>
           </div>
@@ -1069,6 +1122,8 @@ export function EditorView({
             manoObras={manoObras}
             totals={totals}
             configuracion={configuracion}
+            mostrarUsd={mostrarUsd}
+            condiciones={condiciones}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
@@ -1518,6 +1573,8 @@ function PreviewPane({
   manoObras,
   totals,
   configuracion,
+  mostrarUsd = true,
+  condiciones = "",
 }: {
   numero: string
   cliente: Cliente | null
@@ -1532,6 +1589,8 @@ function PreviewPane({
     totalUsd: number
   }
   configuracion: Configuracion
+  mostrarUsd?: boolean
+  condiciones?: string
 }) {
   const fechaVencimiento = new Date(fecha)
   fechaVencimiento.setDate(fechaVencimiento.getDate() + validezDias)
@@ -1549,9 +1608,11 @@ function PreviewPane({
         <div className="flex items-start justify-between gap-3 mb-4 pb-3 border-b border-[oklch(0.85_0.012_80)]">
           <div>
             <div className="text-base font-semibold tracking-tight">{configuracion.razon_social}</div>
-            <div className="font-mono text-[9px] text-[oklch(0.45_0.010_145)] mt-1">
-              {configuracion.cuit ?? "—"} · {configuracion.condicion_iva}
-            </div>
+            {configuracion.cuit && (
+              <div className="font-mono text-[9px] text-[oklch(0.45_0.010_145)] mt-0.5">
+                CUIT {configuracion.cuit}
+              </div>
+            )}
             <div className="font-mono text-[9px] text-[oklch(0.45_0.010_145)]">
               {configuracion.email ?? ""} · {configuracion.telefono ?? ""}
             </div>
@@ -1667,24 +1728,27 @@ function PreviewPane({
               <strong>Total</strong>
               <strong className="font-mono">{formatARS(totals.total)}</strong>
             </div>
-            <div className="flex justify-between py-0.5">
-              <span className="text-[oklch(0.45_0.010_145)]">en USD</span>
-              <span className="font-mono text-[oklch(0.45_0.010_145)]">{formatUSD(totals.totalUsd)}</span>
-            </div>
+            {mostrarUsd && (
+              <div className="flex justify-between py-0.5">
+                <span className="text-[oklch(0.45_0.010_145)]">en USD</span>
+                <span className="font-mono text-[oklch(0.45_0.010_145)]">{formatUSD(totals.totalUsd)}</span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Legal — anchored to bottom when paper has extra height */}
-        {configuracion.texto_legal_pdf && (
-          <div className="mt-auto pt-4 border-t border-[oklch(0.85_0.012_80)] text-[9px] text-[oklch(0.45_0.010_145)] leading-snug">
-            {configuracion.texto_legal_pdf}
+        {/* Condiciones / Legal */}
+        {condiciones && condiciones.trim().length > 0 && (
+          <div className="mt-auto pt-4 border-t border-[oklch(0.85_0.012_80)] text-[9px] text-[oklch(0.45_0.010_145)] leading-snug whitespace-pre-line">
+            <div className="font-semibold uppercase tracking-wider mb-1 text-[8px] text-[oklch(0.40_0.010_145)]">Condiciones</div>
+            {condiciones.trim()}
           </div>
         )}
       </div>
 
       <div className="mt-3 font-mono text-[10px] text-muted-foreground text-center shrink-0">
         <FilePenLine size={11} className="inline mr-1" />
-        Preview en HTML · el PDF descargable se arma con react-pdf (próximo paso)
+        Preview en HTML · el PDF descargable se arma con react-pdf
       </div>
     </div>
   )

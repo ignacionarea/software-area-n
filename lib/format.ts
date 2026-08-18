@@ -35,3 +35,28 @@ export function formatDate(date: string | Date): string {
 export function formatCotizacionNumero(numero: number): string {
   return `CT-${String(numero).padStart(5, "0")}`
 }
+
+export type CotizacionMetadata = {
+  notas?: string
+  mostrarUsd?: boolean
+  condiciones?: string
+}
+
+export function parseCotizacionNotas(rawNotas: string | null): CotizacionMetadata {
+  if (!rawNotas) return { notas: "", mostrarUsd: true, condiciones: "" }
+  try {
+    if (rawNotas.trim().startsWith("{") && rawNotas.trim().endsWith("}")) {
+      const parsed = JSON.parse(rawNotas)
+      return {
+        notas: typeof parsed.notas === "string" ? parsed.notas : "",
+        mostrarUsd: typeof parsed.mostrarUsd === "boolean" ? parsed.mostrarUsd : true,
+        condiciones: typeof parsed.condiciones === "string" ? parsed.condiciones : "",
+      }
+    }
+  } catch {}
+  return { notas: rawNotas, mostrarUsd: true, condiciones: "" }
+}
+
+export function serializeCotizacionNotas(meta: CotizacionMetadata): string {
+  return JSON.stringify(meta)
+}

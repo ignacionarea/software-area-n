@@ -39,6 +39,8 @@ export type CotizacionPdfProps = {
   fechaEmision: string
   validezDias: number
   cotizacionDolar: number
+  mostrarUsd?: boolean
+  condicionesPersonalizadas?: string | null
   cliente: PdfClienteData
   items: PdfItemData[]
   subtotalProductos: number
@@ -205,6 +207,8 @@ export function CotizacionPdf({
   fechaEmision,
   validezDias,
   cotizacionDolar,
+  mostrarUsd = true,
+  condicionesPersonalizadas,
   cliente,
   items,
   subtotalProductos,
@@ -231,9 +235,9 @@ export function CotizacionPdf({
             {logoUrl && <Image src={logoUrl} style={styles.logo} />}
             <View>
               <Text style={styles.brandName}>{configuracion.razon_social}</Text>
-              <Text style={styles.brandLine}>
-                {configuracion.cuit ? `${configuracion.cuit} · ` : ""}{configuracion.condicion_iva}
-              </Text>
+              {configuracion.cuit && (
+                <Text style={styles.brandLine}>CUIT {configuracion.cuit}</Text>
+              )}
               {configuracion.direccion && (
                 <Text style={styles.brandLine}>{configuracion.direccion}</Text>
               )}
@@ -269,11 +273,13 @@ export function CotizacionPdf({
           )}
         </View>
 
-        {/* USD rate */}
-        <View style={styles.rateBox}>
-          <Text style={styles.rateLabel}>Cotización USD oficial venta del día</Text>
-          <Text style={styles.rateValue}>$ {cotizacionDolar.toFixed(2)} / USD</Text>
-        </View>
+        {/* USD rate — only if mostrarUsd is true */}
+        {mostrarUsd && (
+          <View style={styles.rateBox}>
+            <Text style={styles.rateLabel}>Cotización USD oficial venta del día</Text>
+            <Text style={styles.rateValue}>$ {cotizacionDolar.toFixed(2)} / USD</Text>
+          </View>
+        )}
 
         {/* Items */}
         <View style={styles.thead}>
@@ -329,10 +335,12 @@ export function CotizacionPdf({
             <Text style={styles.totalBigLabel}>Total a pagar</Text>
             <Text style={styles.totalBigValue}>{fmtARS(total)}</Text>
           </View>
-          <View style={styles.totalUsdRow}>
-            <Text style={styles.totalUsdLabel}>al dólar BCRA del día</Text>
-            <Text style={styles.totalUsdValue}>{fmtUSD(totalUsd)}</Text>
-          </View>
+          {mostrarUsd && (
+            <View style={styles.totalUsdRow}>
+              <Text style={styles.totalUsdLabel}>al dólar BCRA del día</Text>
+              <Text style={styles.totalUsdValue}>{fmtUSD(totalUsd)}</Text>
+            </View>
+          )}
         </View>
 
         {/* Condiciones de pago */}
@@ -352,12 +360,21 @@ export function CotizacionPdf({
           </View>
         )}
 
-        {/* Legal */}
-        {configuracion.texto_legal_pdf && (
-          <View style={styles.legalBlock}>
-            <Text style={styles.legalTitle}>Condiciones</Text>
-            <Text style={styles.legalBody}>{configuracion.texto_legal_pdf}</Text>
-          </View>
+        {/* Condiciones / Términos de la cotización */}
+        {condicionesPersonalizadas !== undefined ? (
+          condicionesPersonalizadas && condicionesPersonalizadas.trim().length > 0 ? (
+            <View style={styles.legalBlock}>
+              <Text style={styles.legalTitle}>Condiciones</Text>
+              <Text style={styles.legalBody}>{condicionesPersonalizadas.trim()}</Text>
+            </View>
+          ) : null
+        ) : (
+          configuracion.texto_legal_pdf && (
+            <View style={styles.legalBlock}>
+              <Text style={styles.legalTitle}>Condiciones</Text>
+              <Text style={styles.legalBody}>{configuracion.texto_legal_pdf}</Text>
+            </View>
+          )
         )}
 
         <View style={styles.footer} fixed>
