@@ -137,6 +137,11 @@ export function EditorView({
     cotizacion?.validez_dias ?? configuracion.validez_default_dias
   )
   const [mostrarUsd, setMostrarUsd] = useState<boolean>(initialMeta.mostrarUsd ?? true)
+  const [condicionesPago, setCondicionesPago] = useState<string>(
+    initialMeta.condicionesPago !== undefined && initialMeta.condicionesPago !== ""
+      ? initialMeta.condicionesPago
+      : (configuracion.condiciones_pago || "")
+  )
   const [condiciones, setCondiciones] = useState<string>(
     initialMeta.condiciones !== undefined && initialMeta.condiciones !== ""
       ? initialMeta.condiciones
@@ -428,6 +433,7 @@ export function EditorView({
       notas: notas.trim(),
       mostrarUsd,
       condiciones: condiciones.trim(),
+      condicionesPago: condicionesPago.trim(),
     })
     return {
       id: cotizacion?.id,
@@ -504,6 +510,7 @@ export function EditorView({
         cotizacionDolar: cotizacion?.cotizacion_dolar ?? dolarVenta,
         mostrarUsd,
         condicionesPersonalizadas: condiciones.trim() || null,
+        condicionesPagoPersonalizadas: condicionesPago.trim() || null,
         cliente: clienteSeleccionado
           ? {
               nombre: clienteSeleccionado.nombre,
@@ -1074,17 +1081,31 @@ export function EditorView({
             </div>
           </section>
 
-          {/* Condiciones del presupuesto */}
+          {/* Condiciones de pago */}
           <section>
             <SectionHeader
-              title="Condiciones del presupuesto (PDF)"
-              sub="aparece al pie del PDF · editable para este proyecto"
+              title="Condiciones de pago (PDF)"
+              sub="aparece en el PDF · editable para este presupuesto"
+            />
+            <Input
+              value={condicionesPago}
+              onChange={(e) => setCondicionesPago(e.target.value)}
+              placeholder="Ej: 50% de anticipo para reserva de equipos, 50% contra entrega e instalación."
+              className="text-xs"
+            />
+          </section>
+
+          {/* Términos y condiciones generales */}
+          <section>
+            <SectionHeader
+              title="Términos y condiciones generales (PDF)"
+              sub="opcional · aparece al pie del PDF"
             />
             <Textarea
               rows={3}
               value={condiciones}
               onChange={(e) => setCondiciones(e.target.value)}
-              placeholder="Escribí aquí las condiciones de pago, validez de la oferta, plazos de entrega, etc."
+              placeholder="Escribí aquí términos de validez, plazos de entrega, garantías, etc."
               className="text-xs leading-relaxed"
             />
           </section>
@@ -1123,6 +1144,7 @@ export function EditorView({
             totals={totals}
             configuracion={configuracion}
             mostrarUsd={mostrarUsd}
+            condicionesPago={condicionesPago}
             condiciones={condiciones}
           />
         </ResizablePanel>
@@ -1574,6 +1596,7 @@ function PreviewPane({
   totals,
   configuracion,
   mostrarUsd = true,
+  condicionesPago = "",
   condiciones = "",
 }: {
   numero: string
@@ -1590,6 +1613,7 @@ function PreviewPane({
   }
   configuracion: Configuracion
   mostrarUsd?: boolean
+  condicionesPago?: string
   condiciones?: string
 }) {
   const fechaVencimiento = new Date(fecha)
@@ -1737,10 +1761,34 @@ function PreviewPane({
           </div>
         </div>
 
-        {/* Condiciones / Legal */}
+        {/* Condiciones de pago */}
+        {(() => {
+          const textoPago = condicionesPago.trim()
+          const hasBanco = configuracion.banco || configuracion.cbu_alias
+          if (!textoPago && !hasBanco) return null
+          return (
+            <div className="mt-auto pt-3 border-t border-[oklch(0.85_0.012_80)] text-[9px] text-[oklch(0.45_0.010_145)] leading-snug">
+              <div className="font-semibold uppercase tracking-wider mb-0.5 text-[8px] text-[oklch(0.40_0.010_145)]">
+                Condiciones de pago
+              </div>
+              {textoPago && <div className="text-[10px] text-[oklch(0.22_0.008_145)]">{textoPago}</div>}
+              {hasBanco && (
+                <div className="font-mono text-[9px] text-[oklch(0.45_0.010_145)] mt-0.5">
+                  {configuracion.banco ?? ""}
+                  {configuracion.banco && configuracion.cbu_alias ? " · " : ""}
+                  {configuracion.cbu_alias ? `CBU/Alias: ${configuracion.cbu_alias}` : ""}
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* Términos y condiciones adicionales */}
         {condiciones && condiciones.trim().length > 0 && (
-          <div className="mt-auto pt-4 border-t border-[oklch(0.85_0.012_80)] text-[9px] text-[oklch(0.45_0.010_145)] leading-snug whitespace-pre-line">
-            <div className="font-semibold uppercase tracking-wider mb-1 text-[8px] text-[oklch(0.40_0.010_145)]">Condiciones</div>
+          <div className="pt-2 border-t border-[oklch(0.90_0.010_80)] text-[9px] text-[oklch(0.45_0.010_145)] leading-snug whitespace-pre-line mt-2">
+            <div className="font-semibold uppercase tracking-wider mb-0.5 text-[8px] text-[oklch(0.40_0.010_145)]">
+              Condiciones
+            </div>
             {condiciones.trim()}
           </div>
         )}

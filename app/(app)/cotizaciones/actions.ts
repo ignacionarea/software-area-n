@@ -18,6 +18,7 @@ export type PdfPayload = {
   cotizacion_dolar: number
   mostrar_usd: boolean
   condiciones_personalizadas: string | null
+  condiciones_pago_personalizadas: string | null
   cliente: {
     nombre: string
     cuit_dni: string | null
@@ -88,6 +89,7 @@ export async function sendCotizacionByEmail(input: SendEmailInput): Promise<Resu
       cotizacionDolar: p.cotizacion_dolar,
       mostrarUsd: p.mostrar_usd,
       condicionesPersonalizadas: p.condiciones_personalizadas,
+      condicionesPagoPersonalizadas: p.condiciones_pago_personalizadas,
       cliente: p.cliente,
       items: p.items,
       subtotalProductos,
@@ -174,6 +176,7 @@ export async function getPdfPayload(id: string): Promise<Result<PdfPayload>> {
       cotizacion_dolar: Number(cot.cotizacion_dolar),
       mostrar_usd: meta.mostrarUsd ?? true,
       condiciones_personalizadas: meta.condiciones || null,
+      condiciones_pago_personalizadas: meta.condicionesPago !== undefined && meta.condicionesPago !== "" ? meta.condicionesPago : null,
       cliente: cot.clientes
         ? {
             nombre: cot.clientes.nombre,

@@ -40,10 +40,11 @@ export type CotizacionMetadata = {
   notas?: string
   mostrarUsd?: boolean
   condiciones?: string
+  condicionesPago?: string
 }
 
 export function parseCotizacionNotas(rawNotas: string | null): CotizacionMetadata {
-  if (!rawNotas) return { notas: "", mostrarUsd: true, condiciones: "" }
+  if (!rawNotas) return { notas: "", mostrarUsd: true, condiciones: "", condicionesPago: "" }
   try {
     if (rawNotas.trim().startsWith("{") && rawNotas.trim().endsWith("}")) {
       const parsed = JSON.parse(rawNotas)
@@ -51,10 +52,11 @@ export function parseCotizacionNotas(rawNotas: string | null): CotizacionMetadat
         notas: typeof parsed.notas === "string" ? parsed.notas : "",
         mostrarUsd: typeof parsed.mostrarUsd === "boolean" ? parsed.mostrarUsd : true,
         condiciones: typeof parsed.condiciones === "string" ? parsed.condiciones : "",
+        condicionesPago: typeof parsed.condicionesPago === "string" ? parsed.condicionesPago : "",
       }
     }
   } catch {}
-  return { notas: rawNotas, mostrarUsd: true, condiciones: "" }
+  return { notas: rawNotas, mostrarUsd: true, condiciones: "", condicionesPago: "" }
 }
 
 export function serializeCotizacionNotas(meta: CotizacionMetadata): string {

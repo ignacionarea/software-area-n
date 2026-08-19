@@ -41,6 +41,7 @@ export type CotizacionPdfProps = {
   cotizacionDolar: number
   mostrarUsd?: boolean
   condicionesPersonalizadas?: string | null
+  condicionesPagoPersonalizadas?: string | null
   cliente: PdfClienteData
   items: PdfItemData[]
   subtotalProductos: number
@@ -209,6 +210,7 @@ export function CotizacionPdf({
   cotizacionDolar,
   mostrarUsd = true,
   condicionesPersonalizadas,
+  condicionesPagoPersonalizadas,
   cliente,
   items,
   subtotalProductos,
@@ -344,21 +346,27 @@ export function CotizacionPdf({
         </View>
 
         {/* Condiciones de pago */}
-        {(configuracion.condiciones_pago || configuracion.banco || configuracion.cbu_alias) && (
-          <View style={styles.pago}>
-            <Text style={styles.sectionLabel}>Condiciones de pago</Text>
-            {configuracion.condiciones_pago && (
-              <Text style={styles.pagoLine}>{configuracion.condiciones_pago}</Text>
-            )}
-            {(configuracion.banco || configuracion.cbu_alias) && (
-              <Text style={styles.pagoLine}>
-                {configuracion.banco ?? ""}
-                {configuracion.banco && configuracion.cbu_alias ? " · " : ""}
-                {configuracion.cbu_alias ? `CBU/Alias: ${configuracion.cbu_alias}` : ""}
-              </Text>
-            )}
-          </View>
-        )}
+        {(() => {
+          const textoPago =
+            condicionesPagoPersonalizadas !== undefined
+              ? condicionesPagoPersonalizadas?.trim()
+              : configuracion.condiciones_pago?.trim()
+          const hasBanco = configuracion.banco || configuracion.cbu_alias
+          if (!textoPago && !hasBanco) return null
+          return (
+            <View style={styles.pago}>
+              <Text style={styles.sectionLabel}>Condiciones de pago</Text>
+              {textoPago ? <Text style={styles.pagoLine}>{textoPago}</Text> : null}
+              {hasBanco && (
+                <Text style={styles.pagoLine}>
+                  {configuracion.banco ?? ""}
+                  {configuracion.banco && configuracion.cbu_alias ? " · " : ""}
+                  {configuracion.cbu_alias ? `CBU/Alias: ${configuracion.cbu_alias}` : ""}
+                </Text>
+              )}
+            </View>
+          )
+        })()}
 
         {/* Condiciones / Términos de la cotización */}
         {condicionesPersonalizadas !== undefined ? (
